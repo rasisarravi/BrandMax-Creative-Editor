@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Campaign Creative Generator Prototype</title>
+    <script>
+      // Applied before first paint so returning visitors who chose light mode
+      // don't see a flash of the default dark theme. Dark stays the default
+      // whenever nothing has been saved yet.
+      (function () {
+        try {
+          if (localStorage.getItem("shopeeMallTheme") === "light") {
+            document.documentElement.setAttribute("data-theme", "light");
+          }
+        } catch (error) {
+          // Ignore storage access errors (e.g. private browsing).
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <button
+      type="button"
+      id="themeToggle"
+      class="theme-toggle"
+      aria-pressed="false"
+      aria-label="Switch to light mode"
+      title="Toggle light / dark mode"
+    >
+      <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+      </svg>
+      <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
+      </svg>
+    </button>
+    <details class="bulk-panel" id="bulkPanel">
+      <summary class="bulk-panel-summary">
+        <span class="bulk-panel-summary-text">
+          <span class="bulk-panel-title">Bulk generate from CSV</span>
+          <span class="bulk-panel-subtitle">Batch-create assets for many brands at once — the single-image editor below is unaffected.</span>
+        </span>
+      </summary>
+      <div class="bulk-panel-body">
+        <div class="bulk-upload-row">
+          <input id="bulkCsvInput" type="file" accept=".csv,text/csv" />
+          <label class="upload-box bulk-upload-box" for="bulkCsvInput">
+            <span id="bulkCsvFileName">Upload CSV</span>
+          </label>
+          <button type="button" class="field-action-button" id="bulkTemplateButton">
+            Download template
+          </button>
+        </div>
+        <p class="field-hint" id="bulkCsvHint">
+          Columns: <code>Brand Name</code>, <code>KSP</code>, <code>Brand Logo</code>, <code>SKU Image</code>.
+          Brand Name is only used to label rows in the editor below and is never drawn onto the
+          banner. Logo and SKU accept an image hash or a direct link, same as the single editor above.
+        </p>
+
+        <div class="bulk-defaults-row" id="bulkDefaultsRow">
+          <span class="bulk-defaults-label">Default outputs for new rows</span>
+          <div class="chip-row" id="bulkDefaultOutputs">
+            <button type="button" class="chip-button" data-output="category-banner">Category Banner</button>
+            <button type="button" class="chip-button" data-output="top-module-banner">Top Module Banner</button>
+            <button type="button" class="chip-button" data-output="ig-story">IG Story</button>
+            <button type="button" class="chip-button" data-output="fb-post">FB Post</button>
+            <button type="button" class="chip-button" data-output="banner-card">Banner Card</button>
+          </div>
+        </div>
+
+        <div class="bulk-rows" id="bulkRows"></div>
+        <div class="bulk-rows-pager" id="bulkRowsPager" hidden>
+          <button type="button" id="bulkRowsPrevButton" aria-label="Previous bulk rows">&lt;</button>
+          <span id="bulkRowsPageLabel">1-10 of 10</span>
+          <button type="button" id="bulkRowsNextButton" aria-label="Next bulk rows">&gt;</button>
+        </div>
+        <p class="bulk-empty-state" id="bulkEmptyState">Upload a CSV to see rows here.</p>
+
+        <div class="bulk-footer">
+          <span class="bulk-summary" id="bulkSummary"></span>
+          <div class="bulk-footer-actions">
+            <span class="bulk-remove-bg-all-progress" id="bulkRemoveBgAllProgress" hidden></span>
+            <button type="button" class="field-action-button bulk-remove-bg-all-button" id="bulkRemoveBgAllButton">
+              Remove Background All
+            </button>
+            <button type="button" class="generate-button bulk-generate-button" id="bulkGenerateButton" disabled>
+              Generate all
+            </button>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <header class="workflow-topbar" aria-label="BrandMax Creative workflow">
+      <img class="workflow-brand" src="Asset/Logo/BrandMax-Creative-Logo-dark-version.png" alt="BrandMax Creative" />
+      <span class="workflow-divider" aria-hidden="true"></span>
+      <div class="workflow-field"><label for="workflowCampaign">Campaign</label><select id="workflowCampaign"><option value="regular">Regular</option><option value="campaign">Campaign</option></select></div>
+      <div class="workflow-field"><label for="workflowCanvas">Template</label><select id="workflowCanvas"><option value="blank">Blank</option><option value="standard" selected>Standard</option></select></div>
+      <div class="workflow-field workflow-output-field"><label for="workflowOutputToggle">Output</label><div class="workflow-output-menu"><button type="button" id="workflowOutputToggle" aria-expanded="false"><span id="workflowOutputSummary">Banner Card</span><span class="workflow-chevron" aria-hidden="true">⌄</span></button><div id="workflowOutputMenu" class="workflow-output-popover" hidden><label><input type="checkbox" value="banner-card" checked /> Banner Card <small>531 × 792</small></label><label><input type="checkbox" value="pop-up-banner" /> Pop Up Banner <small>580 × 720</small></label><label><input type="checkbox" value="skinny-banner" /> Skinny Banner <small>1200 × 360</small></label></div></div></div>
+      <button type="button" class="workflow-download" id="workflowDownload">Download All</button>
+    </header>
+
+    <main class="app-shell" aria-label="BrandMax Creative">
+      <aside class="control-panel" aria-label="Creative inputs">
+        <div class="panel-heading">
+          <img class="brand-logo" id="brandLogo" src="assets/branding/logo-dark-ui.png" alt="Banner Generator" />
+          <h1>Generate campaign assets</h1>
+        </div>
+        <form class="input-stack">
+          <div class="form-row">
+            <label for="templateSelect">Template</label>
+            <div class="field-wrap">
+              <select id="templateSelect" name="template">
+                <option>Mall BAU</option>
+                <option>Mall BAU New Arrival</option>
+                <option>8.8 Paying Seller</option>
+                <option>9.9 Paying Seller</option>
+                <option>Shopee Live Flash Sale</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="brandLogoInput">Brand Logo</label>
+            <div class="field-wrap">
+              <input id="brandLogoInput" type="file" accept="image/*" />
+              <label class="upload-box" for="brandLogoInput">
+                <span class="upload-icon" aria-hidden="true"></span>
+                <span id="brandFileName">Upload</span>
+              </label>
+            </div>
+            <label class="toggle-row span-wide" for="logoContainerToggle" id="logoContainerToggleRow">
+              <input id="logoContainerToggle" type="checkbox" />
+              <span class="toggle-track" aria-hidden="true"></span>
+              <span>Hide white logo container</span>
+            </label>
+          </div>
+
+          <div class="form-row">
+            <label>Remove Background</label>
+            <div class="dual-action-row span-wide">
+              <button type="button" class="field-action-button" id="removeLogoBgButton">
+                Remove Background
+              </button>
+              <button type="button" class="field-action-button" id="editLogoButton">
+                Touch Up
+              </button>
+            </div>
+            <p class="field-hint">
+              Same as SKU Image below — runs locally in your browser, nothing is uploaded. Touch Up lets you erase leftover bits or restore over-erased areas of the logo by hand.
+            </p>
+            <p class="field-hint is-error" id="removeLogoBgError" hidden></p>
+          </div>
+
+          <div class="form-row" id="inverseLogoRow">
+            <label for="shopeeLogoToggle">Inverse Logo</label>
+            <label class="toggle-row span-wide" for="shopeeLogoToggle">
+              <input id="shopeeLogoToggle" type="checkbox" />
+              <span class="toggle-track" aria-hidden="true"></span>
+              <span>Invert the logo color if the KV color is light</span>
+            </label>
+          </div>
+
+          <div class="form-row" id="shopeeMallLogoRow">
+            <label for="shopeeMallLogoToggle">Shopee Mall Logo</label>
+            <label class="toggle-row span-wide" for="shopeeMallLogoToggle">
+              <input id="shopeeMallLogoToggle" type="checkbox" checked />
+              <span class="toggle-track" aria-hidden="true"></span>
+              <span>Show "Shopee Mall | 100% ORI" tag</span>
+            </label>
+            <p class="field-hint">Turn off to remove the tag from every output. Not available for any Paying Seller template (8.8, 9.9), whose tag is part of a fixed campaign background.</p>
+          </div>
+
+          <div class="form-row two-field-row">
+            <label for="skuImageInput" id="skuImageFieldLabel">SKU Image</label>
+            <div class="field-wrap">
+              <input id="skuImageInput" type="file" accept="image/*" />
+              <label class="upload-box" for="skuImageInput">
+                <span class="upload-icon" aria-hidden="true"></span>
+                <span id="skuFileName">Upload</span>
+              </label>
+            </div>
+            <div class="field-wrap link-action-row">
+              <input
+                id="skuLink"
+                type="text"
+                placeholder="Image Hash / Image Link / Shopee Product URL"
+                autocomplete="off"
+              />
+              <button class="field-action-button" id="loadSkuLinkButton" type="button">
+                Load Image
+              </button>
+            </div>
+          </div>
+
+          <div class="form-row" id="skuImageGalleryRow" hidden>
+            <label>Select SKU Image</label>
+            <div class="sku-image-gallery span-wide" id="skuImageGallery" role="listbox" aria-label="Select SKU image"></div>
+            <p class="field-hint is-error" id="skuImageGalleryError" hidden></p>
+          </div>
+
+          <div class="form-row">
+            <label>Remove Background</label>
+            <div class="dual-action-row span-wide">
+              <button type="button" class="field-action-button" id="removeBgButton">
+                Remove Background
+              </button>
+              <button type="button" class="field-action-button" id="editSkuButton">
+                Touch Up
+              </button>
+            </div>
+            <p class="field-hint">
+              Remove Background runs locally in your browser — the image is never uploaded anywhere. First use downloads a one-time ~80MB model (cached after that); repeat uses are fast. Touch Up lets you erase leftover bits or restore over-erased areas by hand.
+            </p>
+            <p class="field-hint is-error" id="removeBgError" hidden></p>
+          </div>
+
+          <div class="shopee-live-fs-panel" id="shopeeLiveFsPanel" hidden>
+            <div class="form-row two-field-row">
+              <label for="sku2ImageInput">SKU 2 Image</label>
+              <div class="field-wrap">
+                <input id="sku2ImageInput" type="file" accept="image/*" />
+                <label class="upload-box" for="sku2ImageInput">
+                  <span class="upload-icon" aria-hidden="true"></span>
+                  <span id="sku2FileName">Upload</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <label>Remove Background</label>
+              <div class="dual-action-row span-wide">
+                <button type="button" class="field-action-button" id="removeBg2Button">
+                  Remove Background
+                </button>
+                <button type="button" class="field-action-button" id="editSku2Button">
+                  Touch Up
+                </button>
+              </div>
+              <p class="field-hint is-error" id="removeBg2Error" hidden></p>
+            </div>
+
+            <div class="form-row two-field-row">
+              <label for="sku3ImageInput">SKU 3 Image</label>
+              <div class="field-wrap">
+                <input id="sku3ImageInput" type="file" accept="image/*" />
+                <label class="upload-box" for="sku3ImageInput">
+                  <span class="upload-icon" aria-hidden="true"></span>
+                  <span id="sku3FileName">Upload</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <label>Remove Background</label>
+              <div class="dual-action-row span-wide">
+                <button type="button" class="field-action-button" id="removeBg3Button">
+                  Remove Background
+                </button>
+                <button type="button" class="field-action-button" id="editSku3Button">
+                  Touch Up
+                </button>
+              </div>
+              <p class="field-hint is-error" id="removeBg3Error" hidden></p>
+            </div>
+          </div>
+
+          <div class="form-row" id="skuBackgroundRow">
+            <label>SKU Background</label>
+            <div class="background-browser span-wide">
+              <div class="background-browser-controls">
+                <input
+                  id="bgSearchInput"
+                  type="search"
+                  placeholder="Search background"
+                  aria-label="Search background"
+                />
+                <select id="bgCollectionSelect" aria-label="Background collection"></select>
+              </div>
+              <input id="bgUploadInput" type="file" accept="image/*" hidden />
+              <div
+                class="bg-thumb-grid"
+                id="bgThumbGrid"
+                role="listbox"
+                aria-label="SKU background scenes"
+              ></div>
+              <div class="bg-pager" aria-label="Background pages">
+                <button type="button" id="bgPrevButton">Prev</button>
+                <span id="bgResultsLabel">0 backgrounds</span>
+                <button type="button" id="bgNextButton">Next</button>
+              </div>
+            </div>
+            <p class="field-hint">Only shows through transparent SKU photos. Pick “None” to use a flat color instead.</p>
+          </div>
+
+          <div class="form-row" id="skuBgColorRow">
+            <label for="skuBgColorInput">Background Color</label>
+            <div class="inline-color-control span-wide">
+              <label class="native-color compact-color" for="skuBgColorInput">
+                <span class="color-dot" id="skuBgColorDot"></span>
+                <input id="skuBgColorInput" type="color" value="#FFF3F6" />
+                <span>Pick</span>
+              </label>
+              <label class="hex-field" for="skuBgColorHex">
+                <span>Hex</span>
+                <input id="skuBgColorHex" type="text" value="#FFF3F6" maxlength="7" />
+              </label>
+            </div>
+            <p class="field-hint" id="skuBgColorHint">Fills the product area behind a transparent SKU photo when no background scene is selected.</p>
+          </div>
+
+          <div class="form-row" id="kspHintRow">
+            <label>KSP</label>
+            <p class="field-hint span-wide">Double-click the KSP text directly on a banner preview to edit it (switch that card's layer to <strong>KSP</strong> first if it isn't already). Typing updates every banner at once; pressing Enter to force a line break only affects the banner you're editing.</p>
+          </div>
+
+          <div class="form-row" id="kspColorFieldRow">
+            <label for="kspColorInput">KSP Text Color</label>
+            <div class="inline-color-control span-wide">
+              <label class="native-color compact-color" for="kspColorInput">
+                <span class="color-dot" id="kspColorDot"></span>
+                <input id="kspColorInput" type="color" value="#ffffff" />
+                <span>Pick</span>
+              </label>
+              <label class="hex-field" for="kspColorHex">
+                <span>Hex</span>
+                <input id="kspColorHex" type="text" value="#FFFFFF" maxlength="7" />
+              </label>
+            </div>
+          </div>
+
+          <div class="form-row color-row" id="kvColorRow">
+            <label for="hexInput">KV</label>
+            <div class="kv-mode-toggle span-wide" id="kvModeToggle" role="group" aria-label="KV background mode">
+              <button type="button" class="chip-button sm is-active" data-kv-mode="color">Color</button>
+              <button type="button" class="chip-button sm" data-kv-mode="image">Image</button>
+            </div>
+
+            <div class="color-picker span-wide" id="colorPicker">
+              <div class="picker-top">
+                <div class="swatch-grid" id="swatchGrid" aria-label="Color swatches"></div>
+                <canvas
+                  id="colorCanvas"
+                  class="color-canvas"
+                  width="392"
+                  height="198"
+                  aria-label="Color picker"
+                ></canvas>
+              </div>
+              <div class="picker-bottom">
+                <label class="native-color" for="nativeColor">
+                  <span class="color-dot" id="colorDot"></span>
+                  <input id="nativeColor" type="color" value="#ee4d2d" />
+                  <span>Pick</span>
+                </label>
+                <label class="hex-field" for="hexInput">
+                  <span>Hex</span>
+                  <input id="hexInput" type="text" value="#EE4D2D" maxlength="7" />
+                </label>
+                <label class="hue-field" for="hueRange">
+                  <span>Hue</span>
+                  <input id="hueRange" type="range" min="0" max="360" value="10" />
+                </label>
+              </div>
+            </div>
+
+            <div class="kv-image-panel span-wide" id="kvImagePanel" hidden>
+              <div class="field-wrap">
+                <input id="kvImageInput" type="file" accept="image/*" />
+                <label class="upload-box" for="kvImageInput">
+                  <span class="upload-icon" aria-hidden="true"></span>
+                  <span id="kvImageFileName">Upload</span>
+                </label>
+              </div>
+              <p class="field-hint">
+                Recommended at least 1080×850px (the largest KV area, IG Story) so it stays sharp once cropped per format. Supports JPG, PNG, or WebP. After uploading, use the <strong>KV</strong> option in each preview card's edit-target switch to drag its position and zoom per output.
+              </p>
+            </div>
+
+            <p class="field-hint" id="kvColorHint" hidden>
+              Paying Seller templates (8.8, 9.9) use a fixed campaign background — KV has no effect on these templates.
+            </p>
+          </div>
+
+          <div class="form-row output-row" id="outputRow">
+            <label>Output</label>
+            <div
+              class="output-grid span-wide"
+              id="outputButtons"
+              role="listbox"
+              aria-label="Output formats"
+              aria-multiselectable="true"
+            >
+              <button type="button" data-output="banner-card" aria-selected="true">
+                Banner Card
+                <span>531 x 792</span>
+              </button>
+              <button type="button" data-output="pop-up-banner" aria-selected="false">
+                Pop Up Banner
+                <span>580 x 720</span>
+              </button>
+              <button type="button" data-output="skinny-banner" aria-selected="false">
+                Skinny Banner
+                <span>1200 x 360</span>
+              </button>
+            </div>
+          </div>
+        </form>
+        <p class="field-hint panel-footer">Conceptualized &amp; crafted by rasis.tiranudin@shopee.com (ID MKT - Creative)</p>
+      </aside>
+
+      <section class="preview-stage" aria-label="Generated previews">
+        <div class="stage-header">
+          <div>
+            <p class="eyebrow" id="templateLabel">Mall BAU</p>
+            <h1>Generated Outputs</h1>
+          </div>
+          <div class="stage-actions">
+            <span class="status-pill" id="statusPill">Ready</span>
+            <button type="button" class="history-button" id="undoButton" disabled title="Undo (Ctrl/Cmd+Z)" aria-label="Undo">Undo</button>
+            <button type="button" class="history-button" id="redoButton" disabled title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo">Redo</button>
+            <button type="button" id="downloadAllButton">Download ZIP</button>
+          </div>
+        </div>
+        <div class="stage-banner" id="stageBanner" hidden>
+          <span id="stageBannerText"></span>
+          <button type="button" id="stageBannerExit">Back to main editor</button>
+        </div>
+        <div class="preview-list" id="previewList"></div>
+        <section class="preview-list blank-canvas-card" id="blankCanvasCard" hidden><div id="blankPreviewStack"></div></section>
+      </section>
+      <aside class="review-panel" aria-label="Design reviewer">
+        <h2>Design Reviewer</h2>
+        <div class="review-box"><div class="review-suggestions" id="reviewStatus" aria-live="polite"><p>Upload or generate a banner, then analyse its rendered design for tailored suggestions.</p></div><button type="button" id="startReview">Analyse design</button></div>
+        <a href="assets/template-guides/banner-card.png" target="_blank" rel="noreferrer">Download Design Guideline Here</a>
+        <h2>Design Preview</h2>
+        <div class="review-preview" id="reviewPreview">Preview will appear here</div>
+      </aside>
+    </main>
+
+    <div class="edit-sku-overlay" id="editSkuOverlay" hidden>
+      <div class="edit-sku-panel" role="dialog" aria-modal="true" aria-label="Touch up image">
+        <div class="edit-sku-header">
+          <h2 id="editSkuTitle">Touch Up SKU Image</h2>
+          <button type="button" id="editSkuCloseButton" aria-label="Close">&times;</button>
+        </div>
+        <div class="edit-sku-toolbar">
+          <div class="edit-sku-tool-group" role="group" aria-label="Brush tool">
+            <button type="button" class="edit-sku-tool-btn is-active" id="editSkuEraseButton" data-tool="erase">
+              Erase
+            </button>
+            <button type="button" class="edit-sku-tool-btn" id="editSkuRestoreButton" data-tool="restore">
+              Restore
+            </button>
+          </div>
+          <label class="edit-sku-brush-size">
+            <span>Brush size</span>
+            <input type="range" id="editSkuBrushSize" min="8" max="240" value="40" />
+          </label>
+          <div class="edit-sku-tool-group" role="group" aria-label="Canvas backdrop">
+            <button type="button" class="edit-sku-tool-btn is-active" data-backdrop="checker">
+              Checker
+            </button>
+            <button type="button" class="edit-sku-tool-btn" data-backdrop="light">
+              Light
+            </button>
+            <button type="button" class="edit-sku-tool-btn" data-backdrop="dark">
+              Dark
+            </button>
+          </div>
+          <button type="button" class="field-action-button edit-sku-reset-button" id="editSkuResetButton">
+            Reset
+          </button>
+        </div>
+        <div class="edit-sku-canvas-wrap" id="editSkuCanvasWrap">
+          <canvas id="editSkuCanvas"></canvas>
+          <div class="edit-sku-brush-cursor" id="editSkuBrushCursor" aria-hidden="true"></div>
+        </div>
+        <p class="field-hint">
+          Erase leftover background bits, or switch to Restore to bring pixels back if you erase too far into the product. Nothing is applied until you click Save.
+        </p>
+        <div class="edit-sku-footer">
+          <button type="button" class="field-action-button edit-sku-cancel-button" id="editSkuCancelButton">
+            Cancel
+          </button>
+          <button type="button" class="generate-button" id="editSkuSaveButton">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="overlay-assets.js"></script>
+    <script src="script.js"></script>
+    <script src="workflow.js"></script>
+  </body>
+</html>
