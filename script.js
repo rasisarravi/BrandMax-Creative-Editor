@@ -7831,6 +7831,12 @@ function initHomepagePreview() {
     revision: 0,
     standardSources: new Map(),
   };
+  // The placement guide is embedded for both local-file use and deployment.
+  // Do not rely on the original guide folder being present in a GitHub build.
+  const basePreview = root.querySelector(".homepage-base");
+  if (basePreview && window.BrandMaxPreviewAssets?.homepage) {
+    basePreview.src = window.BrandMaxPreviewAssets.homepage;
+  }
   const asset = (id) => root.querySelector(`[data-home-output="${id}"]`);
   const canvasAsset = (id) => root.querySelector(`[data-home-canvas="${id}"]`);
 

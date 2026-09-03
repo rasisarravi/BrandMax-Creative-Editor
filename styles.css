@@ -1923,8 +1923,8 @@ input[type="file"] {
 
 /* Final workflow refinements */
 .workflow-topbar { height: 76px; padding: 0 26px; gap: 24px; box-shadow: 0 2px 8px rgba(24, 27, 32, .08); }
-.workflow-brand { width: 286px; height: 42px; content: url("Asset/Logo/BrandMax-Creative-Logo-dark-version.png"); }
-:root[data-theme="light"] .workflow-brand { content: url("Asset/Logo/BrandMax-Creative-Logo-light-version.png"); }
+.workflow-brand { width: 286px; height: 42px; content: url("assets/branding/logo-dark-ui.png"); }
+:root[data-theme="light"] .workflow-brand { content: url("assets/branding/logo-light-ui.png"); }
 .workflow-divider { height: 30px; }
 .workflow-field { gap: 9px; position: relative; }.workflow-field label { font-size: 12px; font-weight: 600; }
 .workflow-field select { width: 132px; height: 36px; padding: 0 30px 0 12px; border-radius: 7px; font-size: 13px; appearance: none; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m2 4 4 4 4-4' fill='none' stroke='%236d6d6d' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 11px center; }
