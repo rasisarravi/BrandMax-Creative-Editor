@@ -25,7 +25,11 @@ const NEW_ARRIVAL_LOGO_WHITE_URL = "assets/logos/new-arrival-logo-white.png";
 // uploaded (single editor default, and any bulk row without its own logo) —
 // replaces the old hard-coded "cottonseeds" placeholder text so nothing that
 // looks like a real/external brand shows before the user uploads their own.
-const BRAND_LOGO_PLACEHOLDER_URL = "assets/logos/brand-logo-placeholder.png";
+// Package the supplied placeholder as a data URL too: this keeps the canvas
+// export origin-clean when BrandMax is opened directly as a local file.
+const BRAND_LOGO_PLACEHOLDER_URL =
+  window.BrandMaxMallOverlays?.["brand-logo-placeholder"] ||
+  "assets/logos/brand-logo-placeholder.png";
 // Every Paying Seller template's background is a fixed campaign image (not
 // a flat KV color), and each design only has artwork for these two formats.
 const PAYING_SELLER_TEMPLATE = "8.8 Paying Seller";
@@ -45,6 +49,7 @@ const MALL_BAU_OUTPUTS = new Set([
   "banner-card",
   "pop-up-banner",
   "skinny-banner",
+  "floating-icon",
 ]);
 // Every "X Paying Seller" template uses a fixed campaign background image
 // baked into its overlay art instead of a flat, user-controlled KV area.
@@ -151,13 +156,13 @@ const LOSSY_EXPORT_FORMATS = [
 const DETAIL_LIMIT_SCALES = [
   0.95, 0.9, 0.85, 0.78, 0.72, 0.6, 0.5, 0.42, 0.35, 0.28, 0.22, 0.16, 0.1, 0.06,
 ];
-const SIZE_LIMITED_OUTPUTS = new Set(["banner-card", "pop-up-banner"]);
+const SIZE_LIMITED_OUTPUTS = new Set(["banner-card", "pop-up-banner", "floating-icon"]);
 const EXTERNAL_SHOPEE_LOGO_OUTPUTS = new Set(["ig-story", "fb-post"]);
 const SKU_ZOOM_MIN = 0.1;
-const SKU_ZOOM_MAX = 2.5;
+const SKU_ZOOM_MAX = 3;
 const SKU_ZOOM_DEFAULT = 1;
 const LOGO_ZOOM_MIN = 0.5;
-const LOGO_ZOOM_MAX = 2.5;
+const LOGO_ZOOM_MAX = 3;
 const LOGO_ZOOM_DEFAULT = 1;
 // Absolute last-resort floor auto-fit will shrink to before giving up (not
 // the same as a format's own layout.ksp.minSize, which is a curated "design
@@ -399,7 +404,15 @@ const outputMeta = {
     title: "Skinny Banner",
     width: 1200,
     height: 360,
-    overlay: "Template/Skinny%20Banner/Standard/skinny-standard-guide-overlay.png",
+    // Keep the original supplied template art, encoded locally so canvas
+    // exports also work when the tool is opened directly from file://.
+    overlay: window.BrandMaxMallOverlays?.["skinny-standard"] || "Template/Skinny%20Banner/Standard/skinny-standard-guide-overlay.png",
+  },
+  "floating-icon": {
+    title: "Floating Icon",
+    width: 360,
+    height: 360,
+    overlay: window.BrandMaxMallOverlays?.["floating-horizontal"] || "Template/Floating%20Icon/Floating-Icon-Overlay-Horizontal-Logo.png",
   },
   // Its own single, fixed-size, transparent-PNG output — never resized or
   // compressed like the internal-platform formats above (not in
@@ -573,6 +586,7 @@ const state = {
   kvImagePositions: {},
   kvImageZooms: {},
   outputs: new Set(["banner-card"]),
+  floatingLogoRatio: "horizontal",
   skuPositions: {},
   skuZooms: {},
   // Brand logo has no drag/position — only a per-output zoom multiplier,
@@ -661,6 +675,12 @@ const els = {
   templateLabel: document.querySelector("#templateLabel"),
   brandLogoInput: document.querySelector("#brandLogoInput"),
   brandFileName: document.querySelector("#brandFileName"),
+  floatingIconConfigRow: document.querySelector("#floatingIconConfigRow"),
+  floatingLogoRatio: document.querySelector("#floatingLogoRatio"),
+  floatingLogoZoom: document.querySelector("#floatingLogoZoom"),
+  floatingLogoZoomValue: document.querySelector("#floatingLogoZoomValue"),
+  floatingDesignZoom: document.querySelector("#floatingDesignZoom"),
+  floatingDesignZoomValue: document.querySelector("#floatingDesignZoomValue"),
   logoContainerToggle: document.querySelector("#logoContainerToggle"),
   logoContainerToggleRow: document.querySelector("#logoContainerToggleRow"),
   shopeeLogoToggle: document.querySelector("#shopeeLogoToggle"),
@@ -867,6 +887,7 @@ const HISTORY_FIELDS = [
   "kvImagePositions",
   "kvImageZooms",
   "outputs",
+  "floatingLogoRatio",
   "skuPositions",
   "skuZooms",
   "logoZooms",
@@ -3123,6 +3144,85 @@ function drawBrandLogo(ctx, image, box, context = state, outputId = null, fallba
   ctx.restore();
 }
 
+function drawFloatingIconLogo(ctx, image, box, context = state, outputId = null) {
+  // Paint slightly underneath the frame. The red chrome is drawn afterwards,
+  // so no white guide pixels can remain between KV and the outline.
+  const fillBox = {
+    x: box.x - 4,
+    y: box.y - 4,
+    width: box.width + 8,
+    height: box.height + 8,
+    radius: box.radius + 4,
+  };
+  const zoom = outputId ? getLogoZoom(outputId, context) : LOGO_ZOOM_DEFAULT;
+  ctx.save();
+  roundRect(ctx, fillBox.x, fillBox.y, fillBox.width, fillBox.height, fillBox.radius);
+  ctx.clip();
+  // In Standard Floating Icon, the logo panel is part of the KV treatment:
+  // its fill follows the selected KV colour rather than retaining the guide's
+  // white panel. Blank mode has its own DOM renderer and is unaffected.
+  ctx.fillStyle = context.kvColor;
+  ctx.fillRect(fillBox.x, fillBox.y, fillBox.width, fillBox.height);
+  ctx.restore();
+  if (!image) {
+    return;
+  }
+  ctx.save();
+  roundRect(ctx, box.x, box.y, box.width, box.height, box.radius);
+  ctx.clip();
+  drawContain(
+    ctx,
+    image,
+    box.x - (box.width * zoom - box.width) / 2,
+    box.y - (box.height * zoom - box.height) / 2,
+    box.width * zoom,
+    box.height * zoom,
+  );
+  ctx.restore();
+}
+
+function drawFloatingIconChrome(ctx, overlay) {
+  if (!overlay) return;
+  const mask = document.createElement("canvas");
+  mask.width = overlay.naturalWidth || 360;
+  mask.height = overlay.naturalHeight || 360;
+  const maskContext = mask.getContext("2d", { willReadFrequently: true });
+  maskContext.drawImage(overlay, 0, 0, mask.width, mask.height);
+  const pixels = maskContext.getImageData(0, 0, mask.width, mask.height);
+  for (let offset = 0; offset < pixels.data.length; offset += 4) {
+    const x = (offset / 4) % mask.width;
+    const y = Math.floor(offset / 4 / mask.width);
+    const redChrome = pixels.data[offset] > 120 && pixels.data[offset + 1] < 115 && pixels.data[offset + 2] < 115;
+    const closeButton = x >= 300 && y <= 68;
+    if (!redChrome && !closeButton) pixels.data[offset + 3] = 0;
+  }
+  maskContext.putImageData(pixels, 0, 0);
+  ctx.drawImage(mask, 0, 0, 360, 360);
+}
+
+// The supplied Pop Up and Skinny overlays also contain guide-colour pixels
+// immediately outside the red pills. Repainting a rectangular source crop
+// brings those pixels back after the editable artwork is drawn. Clip each
+// crop to the pill itself so the mandatory chrome keeps its intended rounded
+// corners in both the editor and downloaded PNG.
+function drawRoundedOverlayCrop(ctx, image, x, y, width, height, radius) {
+  if (!image) return;
+  ctx.save();
+  roundRect(ctx, x, y, width, height, radius);
+  ctx.clip();
+  ctx.drawImage(image, x, y, width, height, x, y, width, height);
+  ctx.restore();
+}
+
+function drawRoundedOverlayImage(ctx, image, x, y, width, height, radius) {
+  if (!image) return;
+  ctx.save();
+  roundRect(ctx, x, y, width, height, radius);
+  ctx.clip();
+  ctx.drawImage(image, x, y, width, height);
+  ctx.restore();
+}
+
 function getLayout(format, context = state) {
   const { width: w, height: h } = format;
 
@@ -3152,6 +3252,19 @@ function getLayout(format, context = state) {
       product: { x: 613, y: 38, width: 543, height: 280 },
       logo: { x: 177, y: 103, width: 303, height: 101, radius: 18 },
       ksp: { x: 170, y: 214, width: 330, height: 80, maxSize: 42, minSize: 22 },
+      productAlign: [0.5, 0.5],
+    };
+  }
+  if (format.title === "Floating Icon") {
+    const isSquareLogo = context.floatingLogoRatio === "square";
+    return {
+      // The supplied overlays define the fixed red ring and close button.
+      // Only the circular design area and brand-logo panel are editable.
+      product: { x: 20, y: 30, width: 320, height: 320 },
+      logo: isSquareLogo
+        ? { x: 132, y: 20, width: 96, height: 80, radius: 15 }
+        : { x: 61, y: 20, width: 238, height: 80, radius: 15 },
+      ksp: { x: 0, y: 0, width: 0, height: 0, maxSize: 1, minSize: 1 },
       productAlign: [0.5, 0.5],
     };
   }
@@ -3272,12 +3385,9 @@ function drawBackground(ctx, format, outputId, context = state, kvImage = null) 
     ctx.save();
     roundRect(ctx, 36, 30, 508, 657, 30);
     ctx.clip();
-    // The template keeps this lower SKU panel white by default. The existing
-    // SKU background colour control can still deliberately tint it.
-    const skuPanelColor = context.skuBackgroundColor === "#FFF3F6"
-      ? "#FFFFFF"
-      : (context.skuBackgroundColor || "#FFFFFF");
-    ctx.fillStyle = skuPanelColor;
+    // Use the shared soft-pink SKU panel default, matching the other Mall BAU
+    // outputs. Users can still choose a different colour in the editor.
+    ctx.fillStyle = context.skuBackgroundColor || "#FFF3F6";
     ctx.fillRect(36, 30, 508, 657);
     drawKvArea(ctx, layout.kv, outputId, layout, context, kvImage);
     ctx.restore();
@@ -3394,7 +3504,12 @@ function hasKvImage(context = state) {
 }
 
 function getSkuBackgroundSrc(context = state) {
-  return hasSkuBackground(context) ? SKU_BACKGROUNDS[context.skuBackgroundIndex].src : "";
+  if (!hasSkuBackground(context)) return "";
+  const source = SKU_BACKGROUNDS[context.skuBackgroundIndex].src;
+  // Local file URLs taint a canvas opened directly from file://. The phone
+  // preview uses compact embedded equivalents only, keeping the editor and
+  // final banner export on the original full-quality assets.
+  return context.previewLocalAssets?.[source] || source;
 }
 
 function getSkuBackgroundLabel(context = state) {
@@ -3991,19 +4106,72 @@ async function drawOutput(outputId, canvas, options = {}) {
     inverseShopeeMallTag,
     brandLogoPlaceholder,
     kvImage,
+    popupMallTag,
   ] = await Promise.all([
     loadImage(context.brandLogoUrl),
     photoOverride ? Promise.resolve(null) : loadImage(context.skuImageUrl),
-    loadImage(getOverlaySrc(format, context)),
+    loadImage(
+      format.title === "Floating Icon"
+        ? (context.floatingLogoRatio === "square"
+          ? window.BrandMaxMallOverlays?.["floating-square"]
+          : window.BrandMaxMallOverlays?.["floating-horizontal"])
+        : getOverlaySrc(format, context),
+    ),
     loadImage(shouldSwapShopeeIcon ? shopeeIconUrl : ""),
     photoOverride ? Promise.resolve(null) : loadImage(getSkuBackgroundSrc(context)),
     loadImage(shouldSwapNewArrivalBadge ? newArrivalBadgeUrl : ""),
     loadImage(shouldUseInverseShopeeMallTag ? SHOPEE_MALL_TAG_INVERSE_URLS[outputId] : ""),
     context.brandLogoUrl ? Promise.resolve(null) : loadImage(BRAND_LOGO_PLACEHOLDER_URL),
     shouldLoadKvImage ? loadImage(context.kvImageUrl) : Promise.resolve(null),
+    loadImage(format.title === "Pop Up Banner" ? window.BrandMaxMallOverlays?.["popup-tag"] : ""),
   ]);
 
   ctx.clearRect(0, 0, format.width, format.height);
+  if (format.title === "Floating Icon") {
+    const layout = getLayout(format, context);
+    const designBox = { x: 20, y: 30, width: 320, height: 320 };
+    ctx.save();
+    ctx.beginPath();
+    // Exact inner area of the supplied circular red outline.
+    ctx.arc(180, 190, 160, 0, Math.PI * 2);
+    ctx.clip();
+    // The selected background preset is below the SKU artwork. If none is
+    // selected, retain the template's editable soft-pink fallback.
+    ctx.fillStyle = context.skuBackgroundColor || "#FFF3F6";
+    ctx.fillRect(designBox.x, designBox.y, designBox.width, designBox.height);
+    if (backgroundImage) {
+      const bgPosition = getSkuBackgroundPosition(outputId, layout, backgroundImage, context);
+      drawCover(
+        ctx,
+        backgroundImage,
+        designBox.x,
+        designBox.y,
+        designBox.width,
+        designBox.height,
+        bgPosition.x,
+        bgPosition.y,
+        getSkuBackgroundZoom(outputId, context),
+      );
+    }
+    if (skuImage) {
+      const skuPosition = getSkuPosition(outputId, layout, skuImage, context);
+      drawCover(
+        ctx,
+        skuImage,
+        designBox.x,
+        designBox.y,
+        designBox.width,
+        designBox.height,
+        skuPosition.x,
+        skuPosition.y,
+        getSkuZoom(outputId, context),
+      );
+    }
+    ctx.restore();
+    drawFloatingIconLogo(ctx, brandLogo, layout.logo, context, outputId);
+    drawFloatingIconChrome(ctx, overlay);
+    return;
+  }
   const layout = drawBackground(ctx, format, outputId, context, kvImage);
   const isPopUpBanner = format.title === "Pop Up Banner";
   const isSkinnyBanner = format.title === "Skinny Banner";
@@ -4031,22 +4199,40 @@ async function drawOutput(outputId, canvas, options = {}) {
       drawKvArea(ctx, layout.kv, outputId, layout, context, kvImage);
       ctx.restore();
     } else {
+      ctx.save();
+      roundRect(ctx, 36, 30, 508, 657, 30);
+      ctx.clip();
       drawKvArea(ctx, layout.kv, outputId, layout, context, kvImage);
+      ctx.restore();
     }
-    if (overlay && isPopUpBanner) ctx.drawImage(overlay, 129, 10, 323, 52, 129, 10, 323, 52);
-    if (overlay && isSkinnyBanner) ctx.drawImage(overlay, 392, 20, 416, 73, 392, 20, 416, 73);
+    if (popupMallTag && isPopUpBanner) drawRoundedOverlayImage(ctx, popupMallTag, 129, 10, 323, 52, 14);
+    if (overlay && isSkinnyBanner) drawRoundedOverlayCrop(ctx, overlay, 392, 20, 416, 73, 16);
   }
 
   ctx.save();
+  if (isPopUpBanner) {
+    roundRect(ctx, 36, 30, 508, 657, 30);
+    ctx.clip();
+  }
   ctx.beginPath();
-  ctx.rect(layout.product.x, layout.product.y, layout.product.width, layout.product.height);
+  if (isSkinnyBanner) {
+    const { x, y, width, height } = layout.product;
+    const radius = 30;
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x, y + height);
+    ctx.closePath();
+  } else {
+    ctx.rect(layout.product.x, layout.product.y, layout.product.width, layout.product.height);
+  }
   ctx.clip();
   if (isPopUpBanner && !photoOverride) {
-    // The overlay supplies the lower white panel. Repaint that editable area
-    // here so the existing SKU Background Colour control also works for Pop Up.
-    ctx.fillStyle = context.skuBackgroundColor === "#FFF3F6"
-      ? "#FFFFFF"
-      : (context.skuBackgroundColor || "#FFFFFF");
+    // Repaint the editable lower SKU area using the same soft-pink default
+    // as the other standard formats.
+    ctx.fillStyle = context.skuBackgroundColor || "#FFF3F6";
     ctx.fillRect(layout.product.x, layout.product.y, layout.product.width, layout.product.height);
   }
   if (photoOverride) {
@@ -4096,7 +4282,11 @@ async function drawOutput(outputId, canvas, options = {}) {
 
   if (isPopUpBanner && overlay) {
     // Keep the supplied CTA above the lower edge of the editable SKU area.
-    ctx.drawImage(overlay, 90, 644, 399, 66, 90, 644, 399, 66);
+    drawRoundedOverlayCrop(ctx, overlay, 90, 644, 399, 66, 14);
+  }
+  if (isSkinnyBanner && overlay) {
+    // SKU and its background remain below the mandatory Mall tag layer.
+    drawRoundedOverlayCrop(ctx, overlay, 392, 20, 416, 73, 16);
   }
 
   // The overlay contains fixed elements from the working file, including the ribbon.
@@ -4359,15 +4549,9 @@ function openKspEditor(outputId, canvas, shell, context) {
   requestCanvasRedraw(outputId, canvas, context);
 
   textarea.addEventListener("input", () => {
-    const keepsTrailingSpace = /[ \t]$/.test(textarea.value);
-    const plainOffset = getEditorPlainOffset(textarea.value, textarea.selectionStart);
     commitKspTextChange(outputId, textarea.value, context);
-    const displayValue = getEditorDisplayText(getKspRenderText(outputId, context));
-    textarea.value = keepsTrailingSpace ? `${displayValue} ` : displayValue;
-    const selectionIndex = getEditorSelectionIndex(displayValue, plainOffset);
     applyOverlayLayout();
     updateCounter();
-    textarea.setSelectionRange(selectionIndex, selectionIndex);
     redrawAllPreviewCanvases(context);
     if (activeRow) renderBulkRows();
   });
@@ -4981,12 +5165,18 @@ function createShopeeLiveFsPreviewBlock(context = state, onRerender = renderPrev
   download.className = "download-button";
   download.textContent = "Download";
   download.addEventListener("click", () => downloadCanvas(outputId, context));
+  const preview = document.createElement("button");
+  preview.type = "button";
+  preview.className = "preview-button";
+  preview.textContent = "Preview";
+  preview.addEventListener("click", () => window.BrandMaxHomepagePreview?.preview(outputId));
   actions.append(zoomControl);
 
   heading.append(titleWrap, actions);
 
   const shell = document.createElement("div");
   shell.className = "canvas-shell";
+  if (isFloatingIcon) shell.classList.add("floating-icon-shell");
   canvas = document.createElement("canvas");
   canvas.className = "asset-canvas";
   const activeLayerHasImage = resolvedLayerKey === "sku"
@@ -5001,7 +5191,7 @@ function createShopeeLiveFsPreviewBlock(context = state, onRerender = renderPrev
 
   const footer = document.createElement("div");
   footer.className = "preview-footer";
-  footer.append(download);
+  footer.append(preview, download);
   block.append(heading, shell, footer);
   return { block, canvas };
 }
@@ -5030,6 +5220,7 @@ function createPreviewBlock(outputId, context = state, onRerender = renderPrevie
   actions.className = "preview-actions";
 
   const activeLayerKey = getActiveLayer(outputId, context);
+  const isFloatingIcon = format.title === "Floating Icon";
   const isBackgroundActive = activeLayerKey === "background";
   const isLogoActive = activeLayerKey === "logo";
   const isKspActive = activeLayerKey === "ksp";
@@ -5051,8 +5242,10 @@ function createPreviewBlock(outputId, context = state, onRerender = renderPrevie
   const layerOptions = [{ key: "logo", label: "Logo" }];
   // KV sits right after Logo, and only shows up once there's an uploaded KV
   // image to actually drag/zoom (Mall BAU / Mall BAU New Arrival only).
-  if (hasKvImage(context)) layerOptions.push({ key: "kv", label: "KV" });
-  layerOptions.push({ key: "ksp", label: "KSP" }, { key: "sku", label: "SKU" });
+  if (!isFloatingIcon && hasKvImage(context)) layerOptions.push({ key: "kv", label: "KV" });
+  if (!isFloatingIcon) layerOptions.push({ key: "ksp", label: "KSP" });
+  layerOptions.push({ key: "sku", label: "SKU" });
+  // Floating Icon's selected preset is an editable image layer too.
   if (hasSkuBackground(context)) layerOptions.push({ key: "background", label: "BG" });
 
   layerOptions.forEach(({ key, label }) => {
@@ -5073,6 +5266,25 @@ function createPreviewBlock(outputId, context = state, onRerender = renderPrevie
     setActiveLayer(outputId, button.dataset.layer, context);
     onRerender();
   });
+
+  if (isFloatingIcon) {
+    const ratioControl = document.createElement("label");
+    ratioControl.className = "zoom-control floating-preview-ratio";
+    const ratioLabel = document.createElement("span");
+    ratioLabel.textContent = "Logo ratio";
+    const ratioSelect = document.createElement("select");
+    ratioSelect.innerHTML = '<option value="horizontal">Horizontal</option><option value="square">1:1</option>';
+    ratioSelect.value = context.floatingLogoRatio || "horizontal";
+    ratioSelect.setAttribute("aria-label", "Floating Icon logo ratio");
+    ratioSelect.addEventListener("change", () => {
+      commitHistoryStart(context);
+      context.floatingLogoRatio = ratioSelect.value;
+      commitHistoryEnd(context);
+      onRerender();
+    });
+    ratioControl.append(ratioLabel, ratioSelect);
+    actions.append(ratioControl);
+  }
 
   actions.append(layerSwitch);
 
@@ -5152,6 +5364,12 @@ function createPreviewBlock(outputId, context = state, onRerender = renderPrevie
   shell.className = "canvas-shell";
   canvas = document.createElement("canvas");
   canvas.className = "asset-canvas";
+  if (isFloatingIcon) {
+    // Standard uses the identical native preview size as Blank.
+    canvas.style.width = "360px";
+    canvas.style.height = "360px";
+    canvas.style.maxWidth = "100%";
+  }
   // SKU/BG/KV drag an image; KSP drags its own text box (vertical-only);
   // Logo has no drag at all — just its zoom slider.
   const activeLayerHasImage = isDraggableLayer
@@ -5172,7 +5390,12 @@ function createPreviewBlock(outputId, context = state, onRerender = renderPrevie
 
   const footer = document.createElement("div");
   footer.className = "preview-footer";
-  footer.append(download);
+  const preview = document.createElement("button");
+  preview.type = "button";
+  preview.className = "preview-button";
+  preview.textContent = "Preview";
+  preview.addEventListener("click", () => window.BrandMaxHomepagePreview?.preview(outputId));
+  footer.append(preview, download);
   block.append(heading, shell, footer);
   return { block, canvas };
 }
@@ -5181,6 +5404,7 @@ async function renderPreviews() {
   const currentVersion = ++renderVersion;
   els.previewList.innerHTML = "";
   const context = editingContext();
+  syncFloatingIconControls(context);
   document.documentElement.style.setProperty("--kv", context.kvColor);
   els.templateLabel.textContent = context.template;
   const selected = editingOutputs();
@@ -5205,7 +5429,10 @@ async function renderPreviews() {
   });
 
   await Promise.allSettled(jobs);
-  if (currentVersion === renderVersion) setStatus("Ready");
+  if (currentVersion === renderVersion) {
+    setStatus("Ready");
+    window.BrandMaxHomepagePreview?.refresh();
+  }
 }
 
 function drawColorCanvas() {
@@ -5606,6 +5833,23 @@ function selectedOutputs() {
   return Object.keys(outputMeta).filter((output) => state.outputs.has(output));
 }
 
+function syncFloatingIconControls(context = editingContext()) {
+  if (!els.floatingIconConfigRow) return;
+  const isBlankMode = document.querySelector("#workflowCanvas")?.value === "blank";
+  const isFloatingSelected = editingOutputs().includes("floating-icon");
+  els.floatingIconConfigRow.hidden = isBlankMode || !isFloatingSelected;
+  if (els.floatingIconConfigRow.hidden) return;
+  els.floatingLogoRatio.value = context.floatingLogoRatio || "horizontal";
+  const logoZoom = Math.round(getLogoZoom("floating-icon", context) * 100);
+  const designZoom = Math.round(getSkuZoom("floating-icon", context) * 100);
+  els.floatingLogoZoom.value = String(logoZoom);
+  els.floatingLogoZoomValue.value = `${logoZoom}%`;
+  els.floatingLogoZoomValue.textContent = `${logoZoom}%`;
+  els.floatingDesignZoom.value = String(designZoom);
+  els.floatingDesignZoomValue.value = `${designZoom}%`;
+  els.floatingDesignZoomValue.textContent = `${designZoom}%`;
+}
+
 function outputFileName(outputId) {
   const format = outputMeta[outputId];
   return outputFileNameWithExtension(outputId, EXPORT_EXTENSION);
@@ -5878,6 +6122,18 @@ async function createExportFile(outputId, context = state) {
   const pngBlob = await encodeCanvas(canvas, EXPORT_TYPE);
   const sizeLimited = SIZE_LIMITED_OUTPUTS.has(outputId);
 
+  // Floating Icon is specified as transparent PNG; never fall back to JPEG,
+  // which would replace its transparent area with an opaque background.
+  if (outputId === "floating-icon") {
+    if (!pngBlob) throw new Error("PNG export failed.");
+    return {
+      name: outputFileName(outputId),
+      blob: pngBlob,
+      label: "PNG",
+      sizeLimited,
+    };
+  }
+
   if (!sizeLimited) {
     if (!pngBlob) throw new Error("PNG export failed.");
     return {
@@ -6104,32 +6360,47 @@ async function downloadAll() {
   els.downloadAllButton.textContent = "Preparing...";
 
   try {
-    await renderPreviews();
     setStatus("Compressing assets");
 
     const files = [];
+    const failedOutputs = [];
     for (const outputId of selected) {
-      const file = await createExportFile(outputId, context);
-      if (file?.blob) files.push(file);
+      // Match the Blank workflow: build and start each selected file on its
+      // own. One output must never prevent the others from downloading.
+      try {
+        const file = await createExportFile(outputId, context);
+        if (file?.blob) files.push(file);
+      } catch (error) {
+        console.error(`Download failed for ${outputId}`, error);
+        failedOutputs.push(outputMeta[outputId]?.title || outputId);
+      }
     }
 
-    if (!files.length) throw new Error("No files were generated.");
+    if (!files.length) {
+      throw new Error(`No selected outputs could be downloaded: ${failedOutputs.join(", ")}.`);
+    }
 
-    const zip = await createZip(files);
-    const zipName = activeRow
-      ? `row-${bulkState.rows.indexOf(activeRow) + 1}-assets.zip`
-      : "campaign-assets.zip";
-    downloadBlob(zip, zipName);
+    // Match the Blank workflow exactly: download every selected image
+    // directly. Standard mode must not add an intermediate ZIP step.
+    files.forEach((file) => downloadBlob(file.blob, file.name));
+
     const hasOversizedFile = files.some(
       (file) => file.sizeLimited && file.blob.size > EXPORT_MAX_BYTES,
     );
-    setStatus(hasOversizedFile ? "Some > 250 KB" : "Ready");
+    setStatus(
+      hasOversizedFile
+        ? "Some > 250 KB"
+        : failedOutputs.length
+          ? `${files.length} prepared; retry ${failedOutputs.join(", ")}`
+          : `${files.length} asset${files.length === 1 ? "" : "s"} downloaded`,
+    );
+    return true;
   } catch (error) {
     console.error("Download failed", error);
     const isSecurityError = error?.name === "SecurityError";
     setStatus(isSecurityError ? "Use local server" : "Download failed");
     window.setTimeout(() => setStatus("Ready"), 1800);
-    return;
+    return false;
   } finally {
     els.downloadAllButton.disabled = false;
     els.downloadAllButton.textContent = buttonLabel;
@@ -6894,6 +7165,34 @@ els.brandLogoInput.addEventListener("change", () => {
   commitHistoryEnd(editingContext());
 });
 
+els.floatingLogoRatio?.addEventListener("change", () => {
+  const context = editingContext();
+  commitHistoryStart(context);
+  context.floatingLogoRatio = els.floatingLogoRatio.value;
+  commitHistoryEnd(context);
+  renderPreviews();
+});
+
+els.floatingLogoZoom?.addEventListener("input", () => {
+  const context = editingContext();
+  setLogoZoom("floating-icon", Number(els.floatingLogoZoom.value) / 100, context);
+  els.floatingLogoZoomValue.value = `${els.floatingLogoZoom.value}%`;
+  els.floatingLogoZoomValue.textContent = `${els.floatingLogoZoom.value}%`;
+  renderPreviews();
+});
+els.floatingLogoZoom?.addEventListener("pointerdown", () => commitHistoryStart(editingContext()));
+els.floatingLogoZoom?.addEventListener("change", () => commitHistoryEnd(editingContext()));
+
+els.floatingDesignZoom?.addEventListener("input", () => {
+  const context = editingContext();
+  setSkuZoom("floating-icon", Number(els.floatingDesignZoom.value) / 100, context);
+  els.floatingDesignZoomValue.value = `${els.floatingDesignZoom.value}%`;
+  els.floatingDesignZoomValue.textContent = `${els.floatingDesignZoom.value}%`;
+  renderPreviews();
+});
+els.floatingDesignZoom?.addEventListener("pointerdown", () => commitHistoryStart(editingContext()));
+els.floatingDesignZoom?.addEventListener("change", () => commitHistoryEnd(editingContext()));
+
 els.kvModeToggle?.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-kv-mode]");
   if (!button || button.classList.contains("is-active")) return;
@@ -7507,6 +7806,263 @@ window.addEventListener("beforeunload", () => {
   customBackgroundObjectUrls.forEach((url) => URL.revokeObjectURL(url));
 });
 
+// ---------------------------------------------------------------------------
+// Shopee homepage placement preview
+// ---------------------------------------------------------------------------
+// This deliberately reads the rendered banner canvas, not the source image.
+// The right panel therefore mirrors the current editor result, including the
+// fixed overlays, crops, image zoom, background preset, and KSP changes.
+function initHomepagePreview() {
+  const root = document.querySelector("#homepagePreview");
+  const phone = document.querySelector(".iphone-frame");
+  const popupState = document.querySelector("#homepagePopupState");
+  const previous = document.querySelector("#homepagePreviewPrevious");
+  const next = document.querySelector("#homepagePreviewNext");
+  const expand = document.querySelector("#homepagePreviewExpand");
+  const downloadPreview = document.querySelector("#homepagePreviewDownload");
+  const modal = document.querySelector("#homepagePreviewModal");
+  const modalMount = document.querySelector("#homepagePreviewModalMount");
+  if (!root || !phone || !popupState || !previous || !next || !expand || !modal || !modalMount) return;
+
+  const previewState = {
+    page: "homepage",
+    selected: null,
+    blankRenderer: null,
+    revision: 0,
+    standardSources: new Map(),
+  };
+  const asset = (id) => root.querySelector(`[data-home-output="${id}"]`);
+  const canvasAsset = (id) => root.querySelector(`[data-home-canvas="${id}"]`);
+
+  function selectedIds() {
+    return previewState.selected || editingOutputs();
+  }
+
+  function updatePage() {
+    const canShowPopup = selectedIds().includes("pop-up-banner");
+    if (!canShowPopup) previewState.page = "homepage";
+    popupState.hidden = previewState.page !== "popup";
+    phone.classList.toggle("is-popup-preview", previewState.page === "popup");
+    previous.classList.toggle("is-active", previewState.page === "homepage");
+    next.classList.toggle("is-active", previewState.page === "popup");
+    next.disabled = !canShowPopup;
+  }
+
+  async function syncExpandedPhone() {
+    // The expanded panel is a presentation copy of the phone. Refresh that
+    // copy after each artwork update so it never stays on an old placement
+    // guide snapshot while the smaller right-panel preview has moved on.
+    // Canvas pixels are not copied by cloneNode(), so redraw each cloned
+    // standard-template canvas after cloning it.
+    if (modal.hidden) return;
+    const snapshot = phone.cloneNode(true);
+    modalMount.replaceChildren(snapshot);
+    const sourceScreen = phone.querySelector(".iphone-screen");
+    const snapshotScreen = snapshot.querySelector(".iphone-screen");
+    if (sourceScreen && snapshotScreen) snapshotScreen.scrollTop = sourceScreen.scrollTop;
+    await Promise.all([...snapshot.querySelectorAll("canvas[data-home-canvas]")].map(async (canvas) => {
+      if (canvas.hidden) return;
+      try {
+        await drawPreviewCanvas(canvas.dataset.homeCanvas, canvas);
+      } catch (error) {
+        console.warn(`Expanded homepage preview could not draw ${canvas.dataset.homeCanvas}`, error);
+        canvas.hidden = true;
+      }
+    }));
+  }
+
+  async function sourceFor(id) {
+    const isBlank = document.querySelector("#workflowCanvas")?.value === "blank";
+    if (isBlank && previewState.blankRenderer) {
+      const canvas = await previewState.blankRenderer(id);
+      return canvas ? canvas.toDataURL("image/png") : "";
+    }
+    const capturedSource = previewState.standardSources.get(id);
+    if (capturedSource) return capturedSource;
+    // The mounted canvas is the exact artwork the user is seeing. Prefer it
+    // for homepage mirroring (especially Skinny), then use a full-size render
+    // only when that output card is not currently mounted.
+    const mountedCanvas = els.previewList?.querySelector(`canvas.asset-canvas[data-output="${id}"]`);
+    if (mountedCanvas?.width && mountedCanvas?.height) {
+      try {
+        return mountedCanvas.toDataURL("image/png");
+      } catch (error) {
+        console.warn(`Mounted homepage preview could not read ${id}; retrying export render.`, error);
+      }
+    }
+    const canvas = await renderExportCanvas(id, editingContext());
+    return canvas.toDataURL("image/png");
+  }
+
+  async function drawPreviewCanvas(id, targetCanvas) {
+    const isBlank = document.querySelector("#workflowCanvas")?.value === "blank";
+    if (isBlank && previewState.blankRenderer) {
+      const sourceCanvas = await previewState.blankRenderer(id);
+      if (!sourceCanvas) throw new Error(`Blank artwork was not available for ${id}.`);
+      targetCanvas.width = sourceCanvas.width;
+      targetCanvas.height = sourceCanvas.height;
+      const targetContext = targetCanvas.getContext("2d");
+      targetContext.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+      // Drawing a local file canvas is allowed for on-screen display even
+      // though file:// prevents serialising it to a data URL.
+      targetContext.drawImage(sourceCanvas, 0, 0);
+      return;
+    }
+    const previewContext = {
+      ...editingContext(),
+      previewLocalAssets: window.BrandMaxPreviewLocalAssets || {},
+    };
+    await drawOutput(id, targetCanvas, { context: previewContext });
+  }
+
+  async function refresh() {
+    const revision = ++previewState.revision;
+    const ids = selectedIds();
+    await Promise.all(["banner-card", "skinny-banner", "floating-icon", "pop-up-banner"].map(async (id) => {
+      const image = asset(id);
+      const outputCanvas = canvasAsset(id);
+      if (!image) return;
+      if (!ids.includes(id)) {
+        image.hidden = true;
+        image.removeAttribute("src");
+        if (outputCanvas) outputCanvas.hidden = true;
+        return;
+      }
+      // File:// gives every local image a unique origin. Drawing those
+      // assets is safe, but serialising the canvas to a data URL is not. For
+      // the three homepage formats below, render directly into the preview
+      // canvas instead of converting it to an <img> source in both modes.
+      if (outputCanvas) {
+        image.hidden = true;
+        try {
+          await drawPreviewCanvas(id, outputCanvas);
+          if (revision === previewState.revision) outputCanvas.hidden = false;
+        } catch (error) {
+          console.warn(`Homepage preview could not draw ${id}`, error);
+          outputCanvas.hidden = true;
+        }
+        return;
+      }
+      if (outputCanvas) outputCanvas.hidden = true;
+      try {
+        const src = await sourceFor(id);
+        if (revision !== previewState.revision) return;
+        image.hidden = !src;
+        if (src) image.src = src;
+      } catch (error) {
+        console.warn(`Homepage preview could not render ${id}`, error);
+        image.hidden = true;
+      }
+    }));
+    if (revision === previewState.revision) {
+      updatePage();
+      void syncExpandedPhone();
+    }
+  }
+
+  function preview(outputId) {
+    previewState.page = outputId === "pop-up-banner" ? "popup" : "homepage";
+    refresh();
+    root.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  async function openModal() {
+    // Resolve the latest mirrored assets before taking the initial expanded
+    // snapshot; subsequent edits are handled by syncExpandedPhone().
+    await refresh();
+    modal.hidden = false;
+    await syncExpandedPhone();
+  }
+
+  function closeModal() {
+    modal.hidden = true;
+    modalMount.replaceChildren();
+  }
+
+  async function downloadVisiblePhonePreview() {
+    try {
+      // Compose only the device itself. This preserves transparency outside
+      // the phone and mirrors the exact visible scroll position without
+      // capturing the surrounding editor UI.
+      const [baseImage, navImage] = await Promise.all([
+        loadImage(window.BrandMaxPreviewAssets?.homepage || ""),
+        loadImage(window.BrandMaxPreviewAssets?.nav || ""),
+      ]);
+      const frameRect = phone.getBoundingClientRect();
+      const screen = phone.querySelector(".iphone-screen");
+      const screenRect = screen.getBoundingClientRect();
+      const home = screen.querySelector(".shopee-homepage");
+      const homeRect = home.getBoundingClientRect();
+      const nav = phone.querySelector(".iphone-floating-nav");
+      const navRect = nav.getBoundingClientRect();
+      const speakerRect = phone.querySelector(".iphone-speaker").getBoundingClientRect();
+      const density = 2;
+      const capture = document.createElement("canvas");
+      capture.width = Math.round(frameRect.width * density);
+      capture.height = Math.round(frameRect.height * density);
+      const captureContext = capture.getContext("2d");
+      const relativeRect = (rect) => ({
+        x: (rect.left - frameRect.left) * density,
+        y: (rect.top - frameRect.top) * density,
+        width: rect.width * density,
+        height: rect.height * density,
+      });
+      const frameBox = { x: 0, y: 0, width: capture.width, height: capture.height };
+      captureContext.fillStyle = "#171717";
+      roundRect(captureContext, frameBox.x, frameBox.y, frameBox.width, frameBox.height, 33 * density);
+      captureContext.fill();
+      const screenBox = relativeRect(screenRect);
+      captureContext.save();
+      roundRect(captureContext, screenBox.x, screenBox.y, screenBox.width, screenBox.height, 20 * density);
+      captureContext.clip();
+      const homeBox = relativeRect(homeRect);
+      captureContext.drawImage(baseImage, homeBox.x, homeBox.y, homeBox.width, homeBox.height);
+      // Hide the baked-in guide navigation, matching the on-screen mask.
+      captureContext.fillStyle = "#f4f4f4";
+      captureContext.fillRect(homeBox.x, homeBox.y + homeBox.height * .91, homeBox.width, homeBox.height * .09);
+      const drawOutputCanvas = (id) => {
+        const node = phone.querySelector(`canvas[data-home-canvas="${id}"]`);
+        if (!node || node.hidden) return;
+        const box = relativeRect(node.getBoundingClientRect());
+        captureContext.drawImage(node, box.x, box.y, box.width, box.height);
+      };
+      drawOutputCanvas("skinny-banner");
+      drawOutputCanvas("banner-card");
+      drawOutputCanvas("floating-icon");
+      if (!popupState.hidden) {
+        captureContext.fillStyle = "rgba(0,0,0,.5)";
+        captureContext.fillRect(screenBox.x, screenBox.y, screenBox.width, screenBox.height);
+        drawOutputCanvas("pop-up-banner");
+      }
+      captureContext.restore();
+      const speakerBox = relativeRect(speakerRect);
+      captureContext.fillStyle = "#050505";
+      roundRect(captureContext, speakerBox.x, speakerBox.y, speakerBox.width, speakerBox.height, speakerBox.height / 2);
+      captureContext.fill();
+      const navBox = relativeRect(navRect);
+      captureContext.drawImage(navImage, navBox.x, navBox.y, navBox.width, navBox.height);
+      const blob = await new Promise((resolve, reject) => capture.toBlob((value) => value ? resolve(value) : reject(new Error("Preview capture failed.")), "image/png"));
+      downloadBlob(blob, "shopee-homepage-preview.png");
+    } catch (error) {
+      console.warn("Phone preview download failed", error);
+    }
+  }
+
+  previous.addEventListener("click", () => { previewState.page = "homepage"; updatePage(); });
+  next.addEventListener("click", () => { if (!next.disabled) { previewState.page = "popup"; updatePage(); } });
+  expand.addEventListener("click", openModal);
+  downloadPreview?.addEventListener("click", downloadVisiblePhonePreview);
+  modal.querySelectorAll("[data-homepage-close]").forEach((button) => button.addEventListener("click", closeModal));
+
+  window.BrandMaxHomepagePreview = {
+    refresh,
+    preview,
+    updateSelected(ids) { previewState.selected = [...ids]; refresh(); },
+    setBlankRenderer(renderer) { previewState.blankRenderer = renderer; },
+  };
+  updatePage();
+}
+
 const THEME_STORAGE_KEY = "shopeeMallTheme";
 
 function getStoredTheme() {
@@ -7556,6 +8112,12 @@ els.themeToggle?.addEventListener("click", () => {
   applyTheme(isLight);
   setStoredTheme(isLight ? "light" : "dark");
 });
+
+// The workflow top bar is a separate script. Expose the Standard bulk export
+// explicitly so its Download All button always calls the same export path.
+window.downloadAll = downloadAll;
+
+initHomepagePreview();
 
 renderSwatches();
 syncOutputButtons();

@@ -97,9 +97,9 @@
     <header class="workflow-topbar" aria-label="BrandMax Creative workflow">
       <img class="workflow-brand" src="Asset/Logo/BrandMax-Creative-Logo-dark-version.png" alt="BrandMax Creative" />
       <span class="workflow-divider" aria-hidden="true"></span>
-      <div class="workflow-field"><label for="workflowCampaign">Campaign</label><select id="workflowCampaign"><option value="regular">Regular</option><option value="campaign">Campaign</option></select></div>
+      <div class="workflow-field"><label>Campaign</label><div class="workflow-single-value">Regular</div></div>
       <div class="workflow-field"><label for="workflowCanvas">Template</label><select id="workflowCanvas"><option value="blank">Blank</option><option value="standard" selected>Standard</option></select></div>
-      <div class="workflow-field workflow-output-field"><label for="workflowOutputToggle">Output</label><div class="workflow-output-menu"><button type="button" id="workflowOutputToggle" aria-expanded="false"><span id="workflowOutputSummary">Banner Card</span><span class="workflow-chevron" aria-hidden="true">⌄</span></button><div id="workflowOutputMenu" class="workflow-output-popover" hidden><label><input type="checkbox" value="banner-card" checked /> Banner Card <small>531 × 792</small></label><label><input type="checkbox" value="pop-up-banner" /> Pop Up Banner <small>580 × 720</small></label><label><input type="checkbox" value="skinny-banner" /> Skinny Banner <small>1200 × 360</small></label></div></div></div>
+      <div class="workflow-field workflow-output-field"><label for="workflowOutputToggle">Output</label><div class="workflow-output-menu"><button type="button" id="workflowOutputToggle" aria-expanded="false"><span id="workflowOutputSummary">Banner Card</span><span class="workflow-chevron" aria-hidden="true">⌄</span></button><div id="workflowOutputMenu" class="workflow-output-popover" hidden><label><input type="checkbox" value="banner-card" checked /> Banner Card <small>531 × 792</small></label><label><input type="checkbox" value="pop-up-banner" /> Pop Up Banner <small>580 × 720</small></label><label><input type="checkbox" value="skinny-banner" /> Skinny Banner <small>1200 × 360</small></label><label><input type="checkbox" value="floating-icon" /> Floating Icon <small>360 × 360</small></label></div></div></div>
       <button type="button" class="workflow-download" id="workflowDownload">Download All</button>
     </header>
 
@@ -406,6 +406,10 @@
                 Skinny Banner
                 <span>1200 x 360</span>
               </button>
+              <button type="button" data-output="floating-icon" aria-selected="false">
+                Floating Icon
+                <span>360 x 360</span>
+              </button>
             </div>
           </div>
         </form>
@@ -437,9 +441,47 @@
         <div class="review-box"><div class="review-suggestions" id="reviewStatus" aria-live="polite"><p>Upload or generate a banner, then analyse its rendered design for tailored suggestions.</p></div><button type="button" id="startReview">Analyse design</button></div>
         <a href="assets/template-guides/banner-card.png" target="_blank" rel="noreferrer">Download Design Guideline Here</a>
         <h2>Design Preview</h2>
-        <div class="review-preview" id="reviewPreview">Preview will appear here</div>
+        <section class="homepage-preview" id="homepagePreview" aria-label="Shopee homepage preview">
+          <div class="homepage-preview-header">
+            <span id="homepagePreviewLabel">Homepage preview</span>
+            <span class="homepage-preview-actions"><button type="button" class="homepage-expand" id="homepagePreviewDownload" aria-label="Download the visible phone preview">Download</button><button type="button" class="homepage-expand" id="homepagePreviewExpand" aria-label="Open larger homepage preview">Expand</button></span>
+          </div>
+          <div class="iphone-frame">
+            <div class="iphone-speaker" aria-hidden="true"></div>
+            <div class="iphone-screen" id="homepagePreviewScroll">
+              <div class="shopee-homepage" id="homepagePreviewCanvas">
+                <img class="homepage-base" src="Preview/Placement%20Guide/Homepage-preview-skinny,-banner-card.png" alt="Shopee homepage placement preview" />
+                <img class="homepage-output homepage-skinny" data-home-output="skinny-banner" alt="Skinny Banner preview" hidden />
+                <canvas class="homepage-output homepage-output-canvas homepage-skinny" data-home-canvas="skinny-banner" aria-label="Skinny Banner preview" hidden></canvas>
+                <div class="homepage-skinny-guide-mask" aria-hidden="true"></div>
+                <img class="homepage-output homepage-card" data-home-output="banner-card" alt="Banner Card preview" hidden />
+                <canvas class="homepage-output homepage-output-canvas homepage-card" data-home-canvas="banner-card" aria-label="Banner Card preview" hidden></canvas>
+                <img class="homepage-output homepage-floating" data-home-output="floating-icon" alt="Floating Icon preview" hidden />
+                <div class="homepage-popup-state" id="homepagePopupState" hidden>
+                  <img class="homepage-output homepage-popup" data-home-output="pop-up-banner" alt="Pop Up Banner preview" />
+                  <canvas class="homepage-output homepage-output-canvas homepage-popup" data-home-canvas="pop-up-banner" aria-label="Pop Up Banner preview" hidden></canvas>
+                </div>
+              </div>
+            </div>
+            <canvas class="homepage-output homepage-output-canvas iphone-floating-output" data-home-canvas="floating-icon" aria-label="Floating Icon preview" hidden></canvas>
+            <div class="iphone-floating-nav" aria-hidden="true"></div>
+          </div>
+          <div class="homepage-preview-controls">
+            <button type="button" id="homepagePreviewPrevious" aria-label="Show homepage preview">Homepage</button>
+            <button type="button" id="homepagePreviewNext" aria-label="Show pop up banner preview">Pop up</button>
+          </div>
+        </section>
+        <div class="review-preview" id="reviewPreview" hidden>Preview will appear here</div>
       </aside>
     </main>
+
+    <div class="homepage-preview-modal" id="homepagePreviewModal" hidden>
+      <div class="homepage-preview-modal-backdrop" data-homepage-close></div>
+      <section class="homepage-preview-modal-card" role="dialog" aria-modal="true" aria-label="Large Shopee homepage preview">
+        <button type="button" class="homepage-preview-modal-close" data-homepage-close aria-label="Close preview">×</button>
+        <div id="homepagePreviewModalMount"></div>
+      </section>
+    </div>
 
     <div class="edit-sku-overlay" id="editSkuOverlay" hidden>
       <div class="edit-sku-panel" role="dialog" aria-modal="true" aria-label="Touch up image">
@@ -491,8 +533,10 @@
       </div>
     </div>
 
-    <script src="overlay-assets.js"></script>
-    <script src="script.js"></script>
+<script src="overlay-assets.js"></script>
+<script src="preview-assets.js"></script>
+<script src="preview-local-assets.js"></script>
+<script src="script.js"></script>
     <script src="workflow.js"></script>
   </body>
 </html>

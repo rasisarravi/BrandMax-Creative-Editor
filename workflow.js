@@ -1,5 +1,4 @@
 (() => {
-  const campaign = document.querySelector('#workflowCampaign');
   const template = document.querySelector('#templateSelect');
   const templateMode = document.querySelector('#workflowCanvas');
   const outputToggle = document.querySelector('#workflowOutputToggle');
@@ -17,12 +16,16 @@
   const outputs = {
     'banner-card': { title: 'Banner Card', meta: '531 x 792px', width: '375px', ratio: '531 / 792', canvasWidth: 531, canvasHeight: 792, overlay: exactMallOverlays['banner-card'] || 'Template/Shopee%20Mall%20tag%20Overlay/Mall%20BAU%20Template_Mall_BAU_26-29mei_Banner%20Card_01%20copy.png' },
     'pop-up-banner': { title: 'Pop Up Banner', meta: '580 x 720px', width: '390px', ratio: '580 / 720', canvasWidth: 580, canvasHeight: 720, designBox: { x: 36, y: 30, width: 507, height: 654 }, mallTag: exactMallOverlays['popup-tag'] || 'Template/Pop%20Up%20Banner/Blank/Pop-Up-template-shopee-mall-tag.png', cta: exactMallOverlays['popup-cta'] || 'Template/Pop%20Up%20Banner/Blank/Pop-Up-template-CTA.png' },
-    'skinny-banner': { title: 'Skinny Banner', meta: '1200 x 360px', width: '720px', ratio: '1200 / 360', canvasWidth: 1200, canvasHeight: 360, designBox: { x: 46, y: 39, width: 1108, height: 280 }, overlay: 'Template/Skinny%20Banner/Blank/skinny-blank-overlay.png' }
+    'skinny-banner': { title: 'Skinny Banner', meta: '1200 x 360px', width: '720px', ratio: '1200 / 360', canvasWidth: 1200, canvasHeight: 360, designBox: { x: 46, y: 39, width: 1108, height: 280 }, overlay: 'Template/Skinny%20Banner/Blank/skinny-blank-overlay.png' },
+    'floating-icon': { title: 'Floating Icon', meta: '360 x 360px', width: '360px', ratio: '1 / 1', canvasWidth: 360, canvasHeight: 360, designBox: { x: 20, y: 30, width: 320, height: 320 }, overlay: exactMallOverlays['floating-horizontal'] || 'Template/Floating%20Icon/Floating-Icon-Overlay-Horizontal-Logo.png' }
   };
   const blankUploads = new Map();
   const blankEdits = new Map();
   const canvasOverlayCache = new Map();
   let reviewedOutputId = null;
+  let floatingBlankLogoRatio = 'horizontal';
+  let floatingBlankLogo = null;
+  let floatingBlankLogoScale = 100;
   const selectedOutputs = () => outputChecks.filter((input) => input.checked).map((input) => input.value);
   const editFor = (id) => blankEdits.get(id) || { scale: 0, x: 0, y: 0 };
   const setEdit = (id, edit) => blankEdits.set(id, edit);
@@ -86,7 +89,8 @@
           ? Promise.all([loadImage(item.overlay), Promise.resolve(null)])
           : Promise.all([loadImage(item.mallTag), loadImage(item.cta)]))
         : Promise.resolve([]);
-      return Promise.all([waitForVisibleImage(visibleDesign, upload.url), overlays]).then(([design, [mallTag, cta]]) => {
+      const logoSource = item.title === 'Floating Icon' ? floatingBlankLogo?.url : '';
+      return Promise.all([waitForVisibleImage(visibleDesign, upload.url), overlays, logoSource ? loadImage(logoSource) : Promise.resolve(null)]).then(([design, [mallTag, cta], logo]) => {
         const canvas = document.createElement('canvas');
         canvas.width = item.canvasWidth;
         canvas.height = item.canvasHeight;
@@ -103,7 +107,12 @@
         // The supplied Blank Pop Up guide contains a rounded design boundary.
         // It is a clip only: all space outside the uploaded artwork stays
         // transparent in the final PNG.
-        roundedRectPath(context, box.x, box.y, box.width, box.height, 30);
+        if (item.title === 'Floating Icon') {
+          context.beginPath();
+          context.arc(180, 190, 160, 0, Math.PI * 2);
+        } else {
+          roundedRectPath(context, box.x, box.y, box.width, box.height, 30);
+        }
         context.clip();
         context.drawImage(design, x, y, width, height);
         context.restore();
@@ -112,6 +121,15 @@
         } else if (mallTag && cta) {
           context.drawImage(mallTag, 129, 10, 323, 52);
           context.drawImage(cta, 90, 644, 399, 66);
+        }
+        if (item.title === 'Floating Icon' && logo) {
+          const logoBox = floatingBlankLogoRatio === 'square'
+            ? { x: 132, y: 20, width: 96, height: 80 }
+            : { x: 61, y: 20, width: 238, height: 80 };
+          const logoScale = Math.min(logoBox.width / logo.naturalWidth, logoBox.height / logo.naturalHeight) * 0.84 * (floatingBlankLogoScale / 100);
+          const logoWidth = logo.naturalWidth * logoScale;
+          const logoHeight = logo.naturalHeight * logoScale;
+          context.drawImage(logo, logoBox.x + (logoBox.width - logoWidth) / 2, logoBox.y + (logoBox.height - logoHeight) / 2, logoWidth, logoHeight);
         }
         return canvas;
       });
@@ -312,9 +330,13 @@
     const fullCanvas = await createBlankArtworkCanvas(id);
     const png = await canvasToBlob(fullCanvas, 'image/png');
     if (item.title === 'Skinny Banner') return { blob: png, extension: 'png' };
+    if (item.title === 'Floating Icon') {
+      const indexed = png.size <= EXPORT_MAX_BYTES ? png : await indexedPngBlob(fullCanvas, 0);
+      return { blob: indexed || png, extension: 'png' };
+    }
     // Pop Up Banner is explicitly a transparent PNG output. Its fixed canvas
     // is always 580 × 720, and it must never take the generic JPEG fallback.
-    if (item.designBox) {
+    if (item.designBox && item.mallTag) {
       if (png.size <= EXPORT_MAX_BYTES) return { blob: png, extension: 'png' };
       const designCanvas = await createBlankArtworkCanvas(id, false);
       const [mallTag, cta] = await Promise.all([loadImage(item.mallTag), loadImage(item.cta)]);
@@ -404,8 +426,8 @@
       // Pop Up stays transparent PNG and prioritises the supplied artwork's
       // colour quality if a browser PNG encoder cannot reach 250KB exactly.
       const maxBytes = outputs[id].title === 'Skinny Banner' ? 700 * 1000 : outputs[id].title === 'Banner Card' ? 500 * 1000 : EXPORT_MAX_BYTES;
-      const isTransparentPopUp = Boolean(outputs[id].mallTag);
-      if (!file || (!isTransparentPopUp && file.blob.size > maxBytes)) {
+      const isTransparentPng = Boolean(outputs[id].mallTag) || outputs[id].title === 'Floating Icon';
+      if (!file || (!isTransparentPng && file.blob.size > maxBytes)) {
         throw new Error('Cannot meet export limit');
       }
       const link = document.createElement('a');
@@ -444,18 +466,65 @@
       const upload = blankUploads.get(id);
       const isBounded = Boolean(item.designBox);
       const isPopup = Boolean(item.mallTag);
+      const isFloating = id === 'floating-icon';
+      const overlaySrc = isFloating
+        ? (floatingBlankLogoRatio === 'square'
+          ? 'Template/Floating%20Icon/Floating-Icon-Overlay-1;1-Logo.png'
+          : 'Template/Floating%20Icon/Floating-Icon-Overlay-Horizontal-Logo.png')
+        : item.overlay;
       const boxStyle = isBounded ? `--design-x:${item.designBox.x / item.canvasWidth * 100}%;--design-y:${item.designBox.y / item.canvasHeight * 100}%;--design-w:${item.designBox.width / item.canvasWidth * 100}%;--design-h:${item.designBox.height / item.canvasHeight * 100}%;` : '';
-      const popupOverlays = isPopup ? `<img class="blank-popup-tag" src="${item.mallTag}" alt="Mandatory Shopee Mall tag overlay" /><img class="blank-popup-cta" src="${item.cta}" alt="Mandatory CTA overlay" />` : `<img class="blank-mall-tag" src="${item.overlay}" alt="Mandatory Shopee Mall tag overlay" />`;
-      const uploadInfo = isBounded ? `Upload your design<br /><b>${item.designBox.width} × ${item.designBox.height}px</b>` : `Upload a ${item.title} design`;
+      const popupOverlays = isPopup ? `<img class="blank-popup-tag" src="${item.mallTag}" alt="Mandatory Shopee Mall tag overlay" /><img class="blank-popup-cta" src="${item.cta}" alt="Mandatory CTA overlay" />` : `<img class="blank-mall-tag" src="${overlaySrc}" alt="Mandatory Floating Icon overlay" />`;
+      const floatingLogoBox = floatingBlankLogoRatio === 'square'
+        ? { x: 132, y: 20, width: 96, height: 80 }
+        : { x: 61, y: 20, width: 238, height: 80 };
+      const floatingLogoStyle = `--floating-logo-x:${floatingLogoBox.x / item.canvasWidth * 100}%;--floating-logo-y:${floatingLogoBox.y / item.canvasHeight * 100}%;--floating-logo-w:${floatingLogoBox.width / item.canvasWidth * 100}%;--floating-logo-h:${floatingLogoBox.height / item.canvasHeight * 100}%;`;
+      const floatingLogoMarkup = isFloating ? `<div class="blank-floating-logo" style="${floatingLogoStyle}">${floatingBlankLogo ? `<img src="${floatingBlankLogo.url}" alt="Uploaded brand logo" style="transform:scale(${floatingBlankLogoScale / 100})" />` : ''}<label>${floatingBlankLogo ? 'Replace logo' : 'Upload logo'}<input data-upload="logo" type="file" accept="image/png,image/jpeg,image/webp" /></label></div>` : '';
+      // Always state the editable design-area size. Banner Card fills its
+      // whole output; Pop Up and Skinny use their smaller upload areas.
+      const uploadArea = item.designBox || {
+        width: item.canvasWidth,
+        height: item.canvasHeight,
+      };
+      const uploadInfo = `Upload your design<br /><b>${uploadArea.width} × ${uploadArea.height}px</b>`;
       const designPreview = isBounded
         ? `<div class="blank-popup-design-mask"><img class="blank-design-preview" alt="Uploaded ${item.title} preview" ${upload ? `src="${upload.url}"` : 'hidden'} /></div>`
         : `<img class="blank-design-preview" alt="Uploaded ${item.title} preview" ${upload ? `src="${upload.url}"` : 'hidden'} />`;
-      block.innerHTML = `<div class="preview-heading"><div><h2 class="preview-title">${item.title}</h2><p class="preview-meta">${item.meta}</p></div><div class="preview-actions"><label class="zoom-control"><span>Image size</span><input type="range" min="0" max="50" step="1" value="${edit.scale}" /><span class="zoom-value">${edit.scale}%</span></label></div></div><div class="canvas-shell blank-canvas-shell"><div class="blank-design-frame ${upload ? 'has-image' : ''} ${isBounded ? 'blank-popup-frame' : ''}" data-blank-output="${id}" style="aspect-ratio:${item.ratio};--blank-preview-width:${item.width};${boxStyle}"><div class="blank-image-placeholder" ${upload ? 'hidden' : ''}><span>YOUR DESIGN</span><small>${uploadInfo}</small>${upload ? '' : '<label class="blank-placeholder-upload">Upload Design<input type="file" accept="image/png,image/jpeg,image/webp" /></label>'}</div>${designPreview}${popupOverlays}</div></div><div class="preview-footer">${upload ? '<label class="blank-canvas-upload">Replace design<input type="file" accept="image/png,image/jpeg,image/webp" /></label>' : '<span></span>'}<button type="button" class="download-button blank-download" ${upload ? '' : 'disabled'}>Download</button></div>`;
-      const input = block.querySelector('input[type="file"]');
-      const slider = block.querySelector('input[type="range"]');
+      block.innerHTML = `<div class="preview-heading"><div><h2 class="preview-title">${item.title}</h2><p class="preview-meta">${item.meta}</p></div><div class="preview-actions">${isFloating ? `<label class="zoom-control floating-ratio-control"><span>Logo ratio</span><select class="floating-blank-ratio"><option value="horizontal">Horizontal</option><option value="square">1:1</option></select></label><label class="zoom-control"><span>Logo size</span><input data-control="logo-scale" type="range" min="60" max="300" step="1" value="${floatingBlankLogoScale}" /><span class="floating-logo-scale-value">${floatingBlankLogoScale}%</span></label>` : ''}<label class="zoom-control"><span>Image size</span><input data-control="design-scale" type="range" min="0" max="300" step="1" value="${edit.scale}" /><span class="zoom-value">${edit.scale}%</span></label></div></div><div class="canvas-shell blank-canvas-shell"><div class="blank-design-frame ${upload ? 'has-image' : ''} ${isBounded ? 'blank-popup-frame' : ''}" data-blank-output="${id}" style="aspect-ratio:${item.ratio};--blank-preview-width:${item.width};${boxStyle}"><div class="blank-image-placeholder" ${upload ? 'hidden' : ''}><div class="blank-placeholder-content"><div class="blank-placeholder-copy"><span>YOUR DESIGN</span><small>${uploadInfo}</small></div>${upload ? '' : '<label class="blank-placeholder-upload">Upload Design<input data-upload="design" type="file" accept="image/png,image/jpeg,image/webp" /></label>'}</div></div>${designPreview}${popupOverlays}${floatingLogoMarkup}</div></div><div class="preview-footer">${upload ? '<label class="blank-canvas-upload">Replace design<input data-upload="design" type="file" accept="image/png,image/jpeg,image/webp" /></label>' : '<span></span>'}<button type="button" class="preview-button blank-homepage-preview">Preview</button><button type="button" class="download-button blank-download" ${upload ? '' : 'disabled'}>Download</button></div>`;
+      const input = block.querySelector('input[data-upload="design"]');
+      const logoInput = block.querySelector('input[data-upload="logo"]');
+      const slider = block.querySelector('input[data-control="design-scale"]');
+      const logoSlider = block.querySelector('input[data-control="logo-scale"]');
       const value = block.querySelector('.zoom-value');
       const frame = block.querySelector('.blank-design-frame');
       const image = block.querySelector('.blank-design-preview');
+      const ratioSelect = block.querySelector('.floating-blank-ratio');
+      if (ratioSelect) {
+        ratioSelect.value = floatingBlankLogoRatio;
+        ratioSelect.addEventListener('change', () => {
+          floatingBlankLogoRatio = ratioSelect.value;
+          outputs['floating-icon'].overlay = floatingBlankLogoRatio === 'square'
+            ? (exactMallOverlays['floating-square'] || 'Template/Floating%20Icon/Floating-Icon-Overlay-1;1-Logo.png')
+            : (exactMallOverlays['floating-horizontal'] || 'Template/Floating%20Icon/Floating-Icon-Overlay-Horizontal-Logo.png');
+          renderBlankPreviews();
+        });
+      }
+      if (logoInput) {
+        logoInput.addEventListener('change', () => {
+          const nextFile = logoInput.files[0];
+          if (!nextFile) return;
+          if (floatingBlankLogo) URL.revokeObjectURL(floatingBlankLogo.url);
+          floatingBlankLogo = { file: nextFile, url: URL.createObjectURL(nextFile) };
+          renderBlankPreviews();
+        });
+      }
+      if (logoSlider) {
+        logoSlider.addEventListener('input', () => {
+          floatingBlankLogoScale = Number(logoSlider.value);
+          block.querySelector('.floating-logo-scale-value').textContent = `${floatingBlankLogoScale}%`;
+          const logoImage = block.querySelector('.blank-floating-logo img');
+          if (logoImage) logoImage.style.transform = `scale(${floatingBlankLogoScale / 100})`;
+        });
+      }
       const apply = () => {
         const next = clampPosition(frame, edit, item);
         image.style.transform = `translate(${next.x}px, ${next.y}px) scale(${1 + next.scale / 100})`;
@@ -473,6 +542,7 @@
         requestAnimationFrame(() => reviewBlankOutput(id));
       });
       block.querySelector('.blank-download').addEventListener('click', () => downloadBlankOutput(id));
+      block.querySelector('.blank-homepage-preview').addEventListener('click', () => window.BrandMaxHomepagePreview?.preview(id));
       slider.addEventListener('input', () => {
         edit.scale = Number(slider.value);
         value.textContent = `${edit.scale}%`;
@@ -480,6 +550,9 @@
       });
       let drag = null;
       frame.addEventListener('pointerdown', (event) => {
+        // Logo upload is a separate action. Do not turn its click into a
+        // design-drag gesture before the browser can open the file picker.
+        if (event.target.closest('.blank-floating-logo')) return;
         if (!upload) return;
         drag = { x: event.clientX, y: event.clientY, startX: edit.x, startY: edit.y };
         frame.setPointerCapture(event.pointerId);
@@ -497,6 +570,7 @@
       blankStack.append(block);
       requestAnimationFrame(apply);
     });
+    window.BrandMaxHomepagePreview?.refresh();
   }
 
   function syncOutputs() {
@@ -508,20 +582,19 @@
     });
     outputSummary.textContent = selected.length === 1 ? outputs[selected[0]].title : `${selected.length} outputs selected`;
     renderBlankPreviews();
+    window.BrandMaxHomepagePreview?.updateSelected(selected);
   }
 
-  function syncCampaign() {
-    template.value = campaign.value === 'campaign' ? '9.9 Paying Seller' : 'Mall BAU';
-    template.dispatchEvent(new Event('change', { bubbles: true }));
-  }
+  window.BrandMaxHomepagePreview?.setBlankRenderer((id) => createBlankArtworkCanvas(id));
+
   function syncTemplate() {
     const blank = templateMode.value === 'blank';
     document.documentElement.classList.toggle('blank-mode', blank);
     blankCard.hidden = !blank;
     if (!blank) showReview('Generate a banner, then select Refresh suggestions to analyse its rendered preview.');
+    window.BrandMaxHomepagePreview?.refresh();
   }
 
-  campaign.addEventListener('change', syncCampaign);
   templateMode.addEventListener('change', syncTemplate);
   outputToggle.addEventListener('click', () => {
     const open = outputMenu.hidden;
@@ -534,8 +607,29 @@
   document.addEventListener('pointerdown', (event) => {
     if (!event.target.closest('.workflow-output-menu')) { outputMenu.hidden = true; outputToggle.setAttribute('aria-expanded', 'false'); }
   });
-  download.addEventListener('click', () => {
-    if (templateMode.value !== 'blank') return originalDownload.click();
+  download.addEventListener('click', async () => {
+    // The top action must invoke the Standard export directly. Forwarding the
+    // click to the secondary button can lose the user-initiated download
+    // gesture in browsers, leaving Download All with no visible result.
+    if (templateMode.value !== 'blank') {
+      if (typeof window.downloadAll === 'function') {
+        const label = download.textContent;
+        download.disabled = true;
+        download.textContent = 'Preparing...';
+        try {
+          const didStartDownloads = await window.downloadAll();
+          if (!didStartDownloads) {
+            download.textContent = 'Download failed';
+            window.setTimeout(() => { download.textContent = label; }, 2200);
+          }
+          return didStartDownloads;
+        } finally {
+          download.disabled = false;
+          if (download.textContent === 'Preparing...') download.textContent = label;
+        }
+      }
+      return originalDownload.click();
+    }
     if (!selectedOutputs().some((id) => blankUploads.has(id))) { reviewStatus.textContent = 'Upload at least one finished design before downloading.'; return; }
     selectedOutputs().filter((id) => blankUploads.has(id)).forEach((id) => downloadBlankOutput(id));
   });
