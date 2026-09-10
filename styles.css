@@ -1973,6 +1973,7 @@ input[type="file"] {
 .blank-placeholder-copy span { display:block; }
 .blank-placeholder-copy small { display:block; }
 .blank-placeholder-content { display:grid; justify-items:center; gap:14px; }
+.blank-preview-block .blank-canvas-upload { margin-top:0; }
 .blank-design-frame[data-blank-output="skinny-banner"] .blank-image-placeholder {
   box-sizing:border-box;
   display:flex;

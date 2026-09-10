@@ -17,7 +17,7 @@
     'banner-card': { title: 'Banner Card', meta: '531 x 792px', width: '375px', ratio: '531 / 792', canvasWidth: 531, canvasHeight: 792, overlay: exactMallOverlays['banner-card'] || 'Template/Shopee%20Mall%20tag%20Overlay/Mall%20BAU%20Template_Mall_BAU_26-29mei_Banner%20Card_01%20copy.png' },
     'pop-up-banner': { title: 'Pop Up Banner', meta: '580 x 720px', width: '390px', ratio: '580 / 720', canvasWidth: 580, canvasHeight: 720, designBox: { x: 36, y: 30, width: 507, height: 654 }, mallTag: exactMallOverlays['popup-tag'] || 'Template/Pop%20Up%20Banner/Blank/Pop-Up-template-shopee-mall-tag.png', cta: exactMallOverlays['popup-cta'] || 'Template/Pop%20Up%20Banner/Blank/Pop-Up-template-CTA.png' },
     'skinny-banner': { title: 'Skinny Banner', meta: '1200 x 360px', width: '720px', ratio: '1200 / 360', canvasWidth: 1200, canvasHeight: 360, designBox: { x: 46, y: 39, width: 1108, height: 280 }, overlay: 'assets/overlays/skinny-blank-overlay.png' },
-    'floating-icon': { title: 'Floating Icon', meta: '360 x 360px', width: '360px', ratio: '1 / 1', canvasWidth: 360, canvasHeight: 360, designBox: { x: 20, y: 30, width: 320, height: 320 }, overlay: exactMallOverlays['floating-horizontal'] || 'Template/Floating%20Icon/Floating-Icon-Overlay-Horizontal-Logo.png' }
+    'floating-icon': { title: 'Floating Icon', meta: '360 x 360px', width: '360px', ratio: '1 / 1', canvasWidth: 360, canvasHeight: 360, designBox: { x: 20, y: 30, width: 320, height: 320 }, overlay: exactMallOverlays['floating-horizontal'] || 'assets/overlays/floating-horizontal-overlay.png' }
   };
   const blankUploads = new Map();
   const blankEdits = new Map();
@@ -469,8 +469,8 @@
       const isFloating = id === 'floating-icon';
       const overlaySrc = isFloating
         ? (floatingBlankLogoRatio === 'square'
-          ? 'Template/Floating%20Icon/Floating-Icon-Overlay-1;1-Logo.png'
-          : 'Template/Floating%20Icon/Floating-Icon-Overlay-Horizontal-Logo.png')
+          ? 'assets/overlays/floating-square-overlay.png'
+          : 'assets/overlays/floating-horizontal-overlay.png')
         : item.overlay;
       const boxStyle = isBounded ? `--design-x:${item.designBox.x / item.canvasWidth * 100}%;--design-y:${item.designBox.y / item.canvasHeight * 100}%;--design-w:${item.designBox.width / item.canvasWidth * 100}%;--design-h:${item.designBox.height / item.canvasHeight * 100}%;` : '';
       const popupOverlays = isPopup ? `<img class="blank-popup-tag" src="${item.mallTag}" alt="Mandatory Shopee Mall tag overlay" /><img class="blank-popup-cta" src="${item.cta}" alt="Mandatory CTA overlay" />` : `<img class="blank-mall-tag" src="${overlaySrc}" alt="Mandatory Floating Icon overlay" />`;
@@ -503,8 +503,8 @@
         ratioSelect.addEventListener('change', () => {
           floatingBlankLogoRatio = ratioSelect.value;
           outputs['floating-icon'].overlay = floatingBlankLogoRatio === 'square'
-            ? (exactMallOverlays['floating-square'] || 'Template/Floating%20Icon/Floating-Icon-Overlay-1;1-Logo.png')
-            : (exactMallOverlays['floating-horizontal'] || 'Template/Floating%20Icon/Floating-Icon-Overlay-Horizontal-Logo.png');
+            ? (exactMallOverlays['floating-square'] || 'assets/overlays/floating-square-overlay.png')
+            : (exactMallOverlays['floating-horizontal'] || 'assets/overlays/floating-horizontal-overlay.png');
           renderBlankPreviews();
         });
       }
