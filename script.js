@@ -1,6 +1,5 @@
 const DEFAULT_SKU_IMAGE = "";
 const FONT_NAME = "ShopeeFontBlack";
-const FONT_URL = "assets/fonts/shopee-font-black.ttf";
 const OVERLAY_BASE = "assets/overlays/";
 const OVERLAY_NO_CONTAINER_BASE = "assets/overlays-no-logo-container/";
 const NEW_ARRIVAL_OVERLAY_BASE = "assets/new-arrival/overlays/";
@@ -30,6 +29,12 @@ const NEW_ARRIVAL_LOGO_WHITE_URL = "assets/logos/new-arrival-logo-white.png";
 const BRAND_LOGO_PLACEHOLDER_URL =
   window.BrandMaxMallOverlays?.["brand-logo-placeholder"] ||
   "assets/logos/brand-logo-placeholder.png";
+// The supplied Banner Card tag is its own transparent overlay, unlike the
+// old working-file overlay, which also contains unrelated logo artwork. Use
+// the packaged copy so the exact tag stays origin-clean for PNG exports.
+const SHOPEE_MALL_BANNER_CARD_TAG_URL =
+  window.BrandMaxMallOverlays?.["banner-card"] ||
+  "Template/Shopee%20Mall%20tag%20Overlay/Mall%20BAU%20Template_Mall_BAU_26-29mei_Banner%20Card_01%20copy.png";
 // Every Paying Seller template's background is a fixed campaign image (not
 // a flat KV color), and each design only has artwork for these two formats.
 const PAYING_SELLER_TEMPLATE = "8.8 Paying Seller";
@@ -51,6 +56,18 @@ const MALL_BAU_OUTPUTS = new Set([
   "skinny-banner",
   "floating-icon",
 ]);
+// The three new Standard choices use the same editable inputs as Mall BAU,
+// but each has its own composition. Their reference artwork lives in
+// Template/Template Selection; it is not baked into exported banners.
+const DESIGN_TEMPLATES = new Set(["Design 1", "Design 2", "Design 3"]);
+const DESIGN_TEMPLATE_DEFAULTS = {
+  "Design 1": { kvColor: "#FFF1D3", kspColor: "#FF9900", skuBackgroundColor: "#FFF3F6" },
+  "Design 2": { kvColor: "#623B2C", kspColor: "#FFFFFF", skuBackgroundColor: "#003D58" },
+  "Design 3": { kvColor: "#5A5B5F", kspColor: "#FFFFFF", skuBackgroundColor: "#E7E8EA" },
+};
+function isDesignTemplate(template) {
+  return DESIGN_TEMPLATES.has(template);
+}
 // Every "X Paying Seller" template uses a fixed campaign background image
 // baked into its overlay art instead of a flat, user-controlled KV area.
 const PAYING_SELLER_TEMPLATES = new Set([PAYING_SELLER_TEMPLATE, PAYING_SELLER_99_TEMPLATE]);
@@ -539,7 +556,7 @@ const SHOPEE_MALL_TAG_INVERSE_URLS = {
 };
 
 const state = {
-  template: "Mall BAU",
+  template: "Design 1",
   brandLogoUrl: "",
   // The pristine, never-background-removed / never-touched-up logo — same
   // idea as originalSkuImageUrl below, set whenever a genuinely new logo is
@@ -572,8 +589,8 @@ const state = {
   // normal way (upload, or a direct hash/link) instead.
   skuImageCandidates: [],
   ksp: "EXCLUSIVE LAUNCH DISKON 25%",
-  kspColor: "#FFFFFF",
-  kvColor: "#EE4D2D",
+  kspColor: "#FF9900",
+  kvColor: "#FFF1D3",
   // "color" (default) fills the KV area with kvColor, same as before. "image"
   // draws kvImageUrl instead, cover-fit and editable per output via the "KV"
   // layer switch (drag position + zoom), same mechanics as the SKU
@@ -675,6 +692,8 @@ const els = {
   templateLabel: document.querySelector("#templateLabel"),
   brandLogoInput: document.querySelector("#brandLogoInput"),
   brandFileName: document.querySelector("#brandFileName"),
+  brandLogoSize: document.querySelector("#brandLogoSize"),
+  brandLogoSizeValue: document.querySelector("#brandLogoSizeValue"),
   floatingIconConfigRow: document.querySelector("#floatingIconConfigRow"),
   floatingLogoRatio: document.querySelector("#floatingLogoRatio"),
   floatingLogoZoom: document.querySelector("#floatingLogoZoom"),
@@ -693,6 +712,7 @@ const els = {
   outputRow: document.querySelector("#outputRow"),
   skuImageInput: document.querySelector("#skuImageInput"),
   skuFileName: document.querySelector("#skuFileName"),
+  kspTextInput: document.querySelector("#kspTextInput"),
   skuLink: document.querySelector("#skuLink"),
   loadSkuLinkButton: document.querySelector("#loadSkuLinkButton"),
   skuImageGalleryRow: document.querySelector("#skuImageGalleryRow"),
@@ -944,6 +964,17 @@ function restoreContext(context, snap) {
   HISTORY_FIELDS.forEach((key) => {
     if (key in snap) context[key] = structuredClone(snap[key]);
   });
+  // The Shopee Mall tag is compulsory, including in older saved projects
+  // whose former optional toggle had been switched off.
+  context.hideShopeeMallTag = false;
+  // Older projects may have used a separate Skinny image. The shared image
+  // wins when one was chosen; if it was never changed from the starter art,
+  // carry the old Skinny upload into the new single-SKU workflow.
+  if ((!context.skuImageUrl || context.skuImageUrl === DEFAULT_SKU_IMAGE) && snap.skinnySkuImageUrl) {
+    context.skuImageUrl = snap.skinnySkuImageUrl;
+    context.originalSkuImageUrl = snap.skinnySkuImageUrl;
+    context.skuImageLabel = snap.skinnySkuImageLabel || context.skuImageLabel || "Upload";
+  }
 }
 
 // Cheap deep-equality so a gesture that opened-and-closed without actually
@@ -1313,6 +1344,7 @@ function commitKspTextChange(outputId, rawValue, context = state) {
   });
 
   if (activeRow) activeRow.kspRaw = plainText;
+  if (els.kspTextInput && editingContext() === context) els.kspTextInput.value = plainText;
 
   return clamped;
 }
@@ -1324,22 +1356,36 @@ function setStatus(message) {
 function ensureFont() {
   if (fontReady) return fontReady;
 
-  if (!("FontFace" in window)) {
+  if (!document.fonts) {
     fontReady = Promise.resolve();
     return fontReady;
   }
 
-  const face = new FontFace(FONT_NAME, `url("${FONT_URL}")`);
-  fontReady = face
-    .load()
-    .then((loadedFace) => {
-      document.fonts.add(loadedFace);
-      return document.fonts.load(`44pt ${FONT_NAME}`);
-    })
+  // The local @font-face rule in styles.css belongs to this iframe document.
+  // Keep all font requests here; never create a FontFace in an ancestor frame.
+  fontReady = document.fonts
+    .load(`900 44pt "${FONT_NAME}"`)
     .catch(() => undefined);
 
   return fontReady;
 }
+
+window.BRANDMAX_VERIFY_SHOPEE_FONT = async () => {
+  const sample = "Shopee Mall 100% ORI 1234567890";
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  context.font = "900 16px Arial Black, sans-serif";
+  const fallbackWidth = context.measureText(sample).width;
+  await ensureFont();
+  context.font = '900 16px "ShopeeFont", Arial Black, sans-serif';
+  const shopeeFontWidth = context.measureText(sample).width;
+  return {
+    loaded: document.fonts?.check?.('900 16px "ShopeeFont"') === true,
+    fallbackWidth,
+    shopeeFontWidth,
+    metricsDiffer: shopeeFontWidth !== fallbackWidth,
+  };
+};
 
 function loadImage(src) {
   if (!src) return Promise.resolve(null);
@@ -1497,9 +1543,19 @@ function setSkuImageUrl(url, labelText) {
   // own comment on the state object for what this is used for.
   context.originalSkuImageUrl = url;
   context.skuImageLabel = labelText || "Linked image";
+  resetSharedSkuTransforms(context);
+  els.skuFileName.textContent = context.skuImageLabel;
+}
+
+function skuImageUrlForOutput(outputId, context = state) {
+  // One SKU upload is shared by every banner format. Each format still keeps
+  // its own position and zoom so different aspect ratios can be composed.
+  return context.skuImageUrl;
+}
+
+function resetSharedSkuTransforms(context) {
   context.skuPositions = {};
   context.skuZooms = {};
-  els.skuFileName.textContent = context.skuImageLabel;
 }
 
 // "Select SKU Image" gallery — only ever populated after a Shopee product
@@ -2838,6 +2894,32 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.closePath();
 }
 
+// The portrait templates meet the outer banner edge on one side. Keep that
+// edge square instead of exposing the product layer through rounded corners.
+function roundTopRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.lineTo(x + width, y + height);
+  ctx.lineTo(x, y + height);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function roundBottomRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height);
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + width, y);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+  ctx.lineTo(x + r, y + height);
+  ctx.arcTo(x, y + height, x, y + height - r, r);
+  ctx.closePath();
+}
+
 function getCoverMetrics(image, width, height, zoom = SKU_ZOOM_DEFAULT) {
   // Base scale is the "cover" fit (fills the box completely at zoom 1).
   // Zoom can go below 1 to shrink the image smaller than the box, or above
@@ -2870,6 +2952,24 @@ function drawContain(ctx, image, x, y, width, height, alignX = 0.5, alignY = 0.5
   const dx = x + (width - drawWidth) * alignX;
   const dy = y + (height - drawHeight) * alignY;
   ctx.drawImage(image, dx, dy, drawWidth, drawHeight);
+}
+
+// Design 3's centered product should show the full cutout at 100% SKU zoom.
+// Retain the same pixel-offset drag and zoom semantics as drawCover, with
+// contain-fit as the baseline so tall products are not cropped by default.
+function drawContainZoom(ctx, image, x, y, width, height, offsetX = 0, offsetY = 0, zoom = SKU_ZOOM_DEFAULT) {
+  if (!image) return;
+  const scale = Math.min(width / image.naturalWidth, height / image.naturalHeight) *
+    clamp(zoom, SKU_ZOOM_MIN, SKU_ZOOM_MAX);
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+  ctx.drawImage(
+    image,
+    x + (width - drawWidth) / 2 + offsetX,
+    y + (height - drawHeight) / 2 + offsetY,
+    drawWidth,
+    drawHeight,
+  );
 }
 
 function getImageContentBounds(image) {
@@ -3144,9 +3244,9 @@ function drawBrandLogo(ctx, image, box, context = state, outputId = null, fallba
   ctx.restore();
 }
 
-function drawFloatingIconLogo(ctx, image, box, context = state, outputId = null) {
+function drawFloatingIconLogo(ctx, image, box, context = state, outputId = null, kvImage = null) {
   // Paint slightly underneath the frame. The red chrome is drawn afterwards,
-  // so no white guide pixels can remain between KV and the outline.
+  // so no gap can remain between the white panel and its outline.
   const fillBox = {
     x: box.x - 4,
     y: box.y - 4,
@@ -3158,11 +3258,18 @@ function drawFloatingIconLogo(ctx, image, box, context = state, outputId = null)
   ctx.save();
   roundRect(ctx, fillBox.x, fillBox.y, fillBox.width, fillBox.height, fillBox.radius);
   ctx.clip();
-  // In Standard Floating Icon, the logo panel is part of the KV treatment:
-  // its fill follows the selected KV colour rather than retaining the guide's
-  // white panel. Blank mode has its own DOM renderer and is unaffected.
-  ctx.fillStyle = context.kvColor;
+  // Use the shared Message Background below the optional white logo shape,
+  // matching the other formats. Extend the fill under the mandatory red
+  // frame so hiding the white shape cannot reveal a transparent seam.
+  ctx.fillStyle = context.kvColor || "#FFF1D3";
   ctx.fillRect(fillBox.x, fillBox.y, fillBox.width, fillBox.height);
+  if (context.kvMode === "image" && kvImage) {
+    drawCover(ctx, kvImage, fillBox.x, fillBox.y, fillBox.width, fillBox.height);
+  }
+  if (!context.hideLogoContainer) {
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(fillBox.x, fillBox.y, fillBox.width, fillBox.height);
+  }
   ctx.restore();
   if (!image) {
     return;
@@ -3210,7 +3317,13 @@ function drawRoundedOverlayCrop(ctx, image, x, y, width, height, radius) {
   ctx.save();
   roundRect(ctx, x, y, width, height, radius);
   ctx.clip();
-  ctx.drawImage(image, x, y, width, height, x, y, width, height);
+  // Overlays can be supplied at print resolution (e.g. 2214×3301 for a
+  // 531×792 Banner Card). Scale the whole source to the logical output before
+  // clipping; source pixels are not the same units as destination pixels.
+  const transform = ctx.getTransform();
+  const logicalWidth = ctx.canvas.width / (transform.a || 1);
+  const logicalHeight = ctx.canvas.height / (transform.d || 1);
+  ctx.drawImage(image, 0, 0, logicalWidth, logicalHeight);
   ctx.restore();
 }
 
@@ -3223,11 +3336,115 @@ function drawRoundedOverlayImage(ctx, image, x, y, width, height, radius) {
   ctx.restore();
 }
 
+// The artwork already contains its final square-top/rounded-bottom outline.
+// Do not clip it to a second rounded rectangle: that changes the supplied
+// silhouette and can cut away the tag's bottom corners.
+function drawExactShopeeMallTag(ctx, tag, outputId) {
+  if (!tag) return;
+  if (outputId === "banner-card") {
+    ctx.drawImage(tag, 0, 0, 531, 792);
+  } else if (outputId === "skinny-banner") {
+    // Crop only the nontransparent native Banner Card tag (1491 × 239 of a
+    // 2213 × 3301 source), then fit it proportionally to the Skinny frame.
+    ctx.drawImage(tag, 361, 0, 1491, 239, 392, 24, 416, 416 * 239 / 1491);
+  }
+}
+
+function getDesignTemplateLayout(format, context) {
+  if (format.title === "Floating Icon") return null;
+  const design = context.template;
+
+  // The 531×792 guide is the master composition. Pop-up uses the same
+  // proportions inside its mandatory rounded frame; Skinny has its own
+  // horizontal arrangement so the design is never cropped to a portrait.
+  if (format.title === "Skinny Banner") {
+    const frame = { x: 45, y: 38, width: 1111, height: 280 };
+    // Skinny is one fixed placement, independent of the portrait template:
+    // editable message/logo on the left and its own SKU image on the right.
+    // The exact supplied gray/white/Mall overlay is painted above both.
+    return {
+      frame,
+      kv: { x: 45, y: 38, width: 568, height: 280 },
+      product: { x: 613, y: 38, width: 543, height: 280 },
+      logo: { x: 140, y: 100, width: 345, height: 80, radius: 16 },
+      ksp: { x: 112, y: 204, width: 400, height: 88, maxSize: 43, minSize: 20 },
+      productAlign: [0.5, 0.5],
+    };
+  }
+
+  const frame = format.title === "Pop Up Banner"
+    ? { x: 36, y: 30, width: 508, height: 657 }
+    : { x: 0, y: 0, width: format.width, height: format.height };
+  const sx = frame.width / 531;
+  const sy = frame.height / 792;
+  const box = (x, y, width, height, radius = 0) => ({
+    x: frame.x + x * sx,
+    y: frame.y + y * sy,
+    width: width * sx,
+    height: height * sy,
+    ...(radius ? { radius: radius * Math.min(sx, sy) } : {}),
+  });
+  const textBox = (x, y, width, height, maxSize, minSize) => ({
+    ...box(x, y, width, height),
+    maxSize: maxSize * Math.min(sx, sy),
+    minSize: minSize * Math.min(sx, sy),
+  });
+  // The fixed red Pop-up CTA begins here and intentionally overlaps the
+  // lower message panel; only the space above its top edge holds KSP text.
+  const popupCtaTop = 644;
+
+  if (design === "Design 1") {
+    return {
+      frame,
+      kv: box(0, 0, 531, 370),
+      product: box(0, 350, 531, 442),
+      logo: box(115, 92, 301, 100, 18),
+      ksp: textBox(55, 226, 421, 124, 43, 22),
+      productAlign: [0.5, 0.5],
+    };
+  }
+  if (design === "Design 2") {
+    const messagePanel = format.title === "Pop Up Banner"
+      ? { x: frame.x, y: frame.y + frame.height * 0.73, width: frame.width, height: frame.height * 0.27, radius: 28 * Math.min(sx, sy) }
+      : box(0, 594, 531, 198, 28);
+    return {
+      frame,
+      kv: messagePanel,
+      messagePanel,
+      product: frame,
+      logo: box(115, 105, 301, 100, 18),
+      ksp: format.title === "Pop Up Banner"
+        ? { ...textBox(58, 598, 415, 112, 43, 22), y: messagePanel.y + 12 * sy, height: popupCtaTop - messagePanel.y - 24 * sy }
+        : textBox(58, 634, 415, 116, 43, 22),
+      productAlign: [0.5, 0.5],
+    };
+  }
+  const messagePanel = format.title === "Pop Up Banner"
+    ? { x: frame.x + frame.width * 0.065, y: frame.y + frame.height * 0.742, width: frame.width * 0.87, height: frame.height * 0.258, radius: frame.height * 0.095 }
+    : box(35, 626, 462, 127, 63);
+  return {
+    frame,
+    kv: messagePanel,
+    messagePanel,
+    product: frame,
+    logo: box(115, 92, 301, 100, 18),
+    ksp: format.title === "Pop Up Banner"
+      ? { ...textBox(65, 600, 401, 95, 41, 21), x: messagePanel.x + 28 * sx, y: messagePanel.y + 12 * sy, width: messagePanel.width - 56 * sx, height: popupCtaTop - messagePanel.y - 24 * sy }
+      : { ...textBox(65, 640, 401, 100, 41, 21), x: messagePanel.x + 28 * sx, y: messagePanel.y + 13 * sy, width: messagePanel.width - 56 * sx, height: messagePanel.height - 26 * sy },
+    productAlign: [0.5, 0.5],
+  };
+}
+
 function getLayout(format, context = state) {
   const { width: w, height: h } = format;
 
   if (isPayingSellerTemplate(context.template) && payingSellerLayouts[format.title]) {
     return payingSellerLayouts[format.title];
+  }
+
+  if (isDesignTemplate(context.template)) {
+    const designLayout = getDesignTemplateLayout(format, context);
+    if (designLayout) return designLayout;
   }
 
   const newArrivalLogo = context.template === "Mall BAU New Arrival"
@@ -3448,11 +3665,14 @@ function setSkuZoom(outputId, zoom, context = state) {
 }
 
 function getLogoZoom(outputId, context = state) {
-  return context.logoZooms[outputId] || LOGO_ZOOM_DEFAULT;
+  return context.logoZooms?.shared ?? context.logoZooms?.[outputId] ?? LOGO_ZOOM_DEFAULT;
 }
 
 function setLogoZoom(outputId, zoom, context = state) {
-  context.logoZooms[outputId] = clamp(zoom, LOGO_ZOOM_MIN, LOGO_ZOOM_MAX);
+  // Keep legacy per-format values readable until the next edit, then one
+  // shared zoom intentionally applies to every output format.
+  if (!context.logoZooms) context.logoZooms = {};
+  context.logoZooms.shared = clamp(zoom, LOGO_ZOOM_MIN, LOGO_ZOOM_MAX);
 }
 
 // Returns the manually-set KSP font size for this output, or null when it
@@ -3490,6 +3710,16 @@ function getKspRenderText(outputId, context = state) {
   return context.kspManualBreaksByOutput?.[outputId] || context.ksp;
 }
 
+// Banner Card starts at 37px for typical campaign copy. Shorter messages
+// may grow automatically, while the manual per-format slider can still use
+// the layout's full maximum size regardless of character count.
+function getKspAutoMaxSize(outputId, context, layout, text = getKspRenderText(outputId, context)) {
+  if (outputId !== "banner-card" || !isDesignTemplate(context.template)) return layout.ksp.maxSize;
+  const characters = String(text || "").replace(/\s+/g, "").length;
+  const shortCopyBonus = clamp(Math.round((20 - characters) * 0.75), 0, 6);
+  return Math.min(layout.ksp.maxSize, 37 + shortCopyBonus);
+}
+
 function hasSkuBackground(context = state) {
   return context.skuBackgroundIndex >= 0 && context.skuBackgroundIndex < SKU_BACKGROUNDS.length;
 }
@@ -3506,10 +3736,10 @@ function hasKvImage(context = state) {
 function getSkuBackgroundSrc(context = state) {
   if (!hasSkuBackground(context)) return "";
   const source = SKU_BACKGROUNDS[context.skuBackgroundIndex].src;
-  // Local file URLs taint a canvas opened directly from file://. The phone
-  // preview uses compact embedded equivalents only, keeping the editor and
-  // final banner export on the original full-quality assets.
-  return context.previewLocalAssets?.[source] || source;
+  // A directly opened file:// image taints a downloadable canvas. Keep the
+  // compact thumbnail for phone previews and use a separate native-resolution
+  // embedded copy only while rendering a final banner.
+  return context.exportLocalAssets?.[source] || context.previewLocalAssets?.[source] || source;
 }
 
 function getSkuBackgroundLabel(context = state) {
@@ -3578,7 +3808,7 @@ function setKvImageZoom(outputId, zoom, context = state) {
 function getSkuLayers(context = state) {
   return {
     sku: {
-      getImageUrl: () => context.skuImageUrl,
+      getImageUrl: (outputId) => skuImageUrlForOutput(outputId, context),
       getPosition: (outputId, layout, image) => getSkuPosition(outputId, layout, image, context),
       setPosition: (outputId, position) => setSkuPosition(outputId, position, context),
       getZoom: (outputId) => getSkuZoom(outputId, context),
@@ -4046,6 +4276,128 @@ function repaintBehindClearBox(ctx, box, outputId, format, layout, context, laye
   ctx.restore();
 }
 
+// Draw the three selectable Standard designs from independent, editable
+// layers. The selection thumbnails and guides are references only: no
+// sample brand/product pixels are baked into the user's export.
+function drawDesignTemplateOutput(ctx, outputId, format, context, layout, layers) {
+  const {
+    brandLogo, skuImage, backgroundImage, photoOverride, kvImage,
+    overlay, popupMallTag, inverseShopeeMallTag, brandLogoPlaceholder, exactShopeeMallTag,
+  } = layers;
+  const design = context.template;
+  const frame = layout.frame;
+  const isPopup = outputId === "pop-up-banner";
+  const isSkinny = outputId === "skinny-banner";
+
+  if (isSkinny) {
+    // The supplied overlay has a transparent design hole. Fill the full
+    // output first so the final Skinny PNG has no transparent pixels.
+    ctx.fillStyle = "#F1F1F1";
+    ctx.fillRect(0, 0, format.width, format.height);
+  }
+  if (isPopup) {
+    const border = { x: 30, y: 24, width: 520, height: 669 };
+    ctx.fillStyle = "#FFFFFF";
+    roundRect(ctx, border.x, border.y, border.width, border.height, 32);
+    ctx.fill();
+  }
+
+  ctx.save();
+  roundRect(ctx, frame.x, frame.y, frame.width, frame.height, isPopup || isSkinny ? 23 : 0);
+  ctx.clip();
+
+  // Design 1 keeps a top message region and lower product scene. Designs
+  // 2/3 use the SKU image across the entire banner, with an independent
+  // message panel layered above it.
+  ctx.fillStyle = context.skuBackgroundColor || DESIGN_TEMPLATE_DEFAULTS[design].skuBackgroundColor;
+  ctx.fillRect(frame.x, frame.y, frame.width, frame.height);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(layout.product.x, layout.product.y, layout.product.width, layout.product.height);
+  ctx.clip();
+  // Match the SKU Background Color control in every new design. Designs
+  // 2/3 start with this colour equal to their KV, so the untouched canvas
+  // remains seamless; changing it deliberately separates the product scene.
+  ctx.fillStyle = context.skuBackgroundColor || DESIGN_TEMPLATE_DEFAULTS[design].skuBackgroundColor;
+  ctx.fillRect(layout.product.x, layout.product.y, layout.product.width, layout.product.height);
+  if (photoOverride) {
+    ctx.drawImage(photoOverride, layout.product.x, layout.product.y, layout.product.width, layout.product.height);
+  } else {
+    if (backgroundImage) {
+      const bgPosition = getSkuBackgroundPosition(outputId, layout, backgroundImage, context);
+      drawCover(
+        ctx, backgroundImage,
+        layout.product.x, layout.product.y, layout.product.width, layout.product.height,
+        bgPosition.x, bgPosition.y, getSkuBackgroundZoom(outputId, context),
+      );
+    }
+    if (skuImage) {
+      const skuPosition = getSkuPosition(outputId, layout, skuImage, context);
+      drawCover(
+        ctx, skuImage,
+        layout.product.x, layout.product.y, layout.product.width, layout.product.height,
+        skuPosition.x, skuPosition.y, getSkuZoom(outputId, context),
+      );
+    }
+  }
+  ctx.restore();
+
+  if (isSkinny) {
+    // The supplied fixed guide rounds the outer boundary. Keep the editable
+    // left panel square underneath it, otherwise the right-side SKU photo
+    // peeks through the panel's bottom-left rounded corner.
+    drawKvArea(ctx, layout.kv, outputId, layout, context, kvImage);
+  } else if (design === "Design 1") {
+    ctx.save();
+    if (outputId === "banner-card") {
+      roundBottomRect(ctx, layout.kv.x, layout.kv.y, layout.kv.width, layout.kv.height, Math.min(46, layout.kv.width * 0.08));
+    } else {
+      roundRect(ctx, layout.kv.x, layout.kv.y - 20, layout.kv.width, layout.kv.height + 20, Math.min(46, layout.kv.width * 0.08));
+    }
+    ctx.clip();
+    drawKvArea(ctx, layout.kv, outputId, layout, context, kvImage);
+    ctx.restore();
+  } else {
+    const panel = layout.messagePanel;
+    ctx.save();
+    if (design === "Design 2") roundTopRect(ctx, panel.x, panel.y, panel.width, panel.height, panel.radius);
+    else roundRect(ctx, panel.x, panel.y, panel.width, panel.height, panel.radius);
+    ctx.clip();
+    drawKvArea(ctx, panel, outputId, layout, context, kvImage);
+    ctx.restore();
+  }
+
+  drawBrandLogo(ctx, brandLogo, layout.logo, context, outputId, brandLogoPlaceholder);
+
+  const kspBox = { ...layout.ksp, y: layout.ksp.y + getKspOffsetY(outputId, context) };
+  drawFittedText(ctx, getKspRenderText(outputId, context), kspBox, {
+    color: context.kspColor,
+    maxSize: getKspAutoMaxSize(outputId, context, layout),
+    minSize: KSP_AUTOFIT_MIN_SIZE,
+    fixedSize: getKspFontSize(outputId, context),
+  });
+  ctx.restore();
+
+  // These three placements retain their compulsory Shopee Mall/CTA chrome.
+  // Crop only the chrome from the supplied overlay, never its old layout.
+  if (outputId === "banner-card") {
+    if (context.useOrangeShopeeLogo && inverseShopeeMallTag) {
+      drawContain(ctx, inverseShopeeMallTag, 87, 0, 358, 57);
+    } else {
+      drawExactShopeeMallTag(ctx, exactShopeeMallTag, outputId);
+    }
+  } else if (isSkinny) {
+    // Paint the exact, immutable supplied overlay last. It provides the
+    // gray surround, white rounded frame, and compulsory Mall tag together.
+    if (overlay) ctx.drawImage(overlay, 0, 0, format.width, format.height);
+    else drawExactShopeeMallTag(ctx, exactShopeeMallTag, outputId);
+  } else if (isPopup) {
+    drawRoundedOverlayImage(ctx, popupMallTag, 129, 10, 323, 52, 14);
+  }
+  if (isPopup) drawRoundedOverlayCrop(ctx, overlay, 90, 644, 399, 66, 14);
+}
+
 async function drawOutput(outputId, canvas, options = {}) {
   const { scale = 1, photoOverride = null, context = state } = options;
   const format = outputMeta[outputId];
@@ -4085,7 +4437,7 @@ async function drawOutput(outputId, canvas, options = {}) {
   // campaign background image, so there's no safe flat-color clear for it there.
   const shopeeMallTagEligible =
     !isPayingSellerTemplate(context.template) && Boolean(shopeeMallTagBoxes[outputId]);
-  const shouldHideShopeeMallTag = context.hideShopeeMallTag && shopeeMallTagEligible;
+  const shouldHideShopeeMallTag = false;
   // Unlike the icon/badge above, the tag's baked-in default (a solid red
   // pill, white text) IS the "off" look, so it only actively swaps when
   // Inverse Logo is checked — off leaves the overlay's own art untouched.
@@ -4107,15 +4459,20 @@ async function drawOutput(outputId, canvas, options = {}) {
     brandLogoPlaceholder,
     kvImage,
     popupMallTag,
+    exactShopeeMallTag,
   ] = await Promise.all([
     loadImage(context.brandLogoUrl),
-    photoOverride ? Promise.resolve(null) : loadImage(context.skuImageUrl),
+    photoOverride ? Promise.resolve(null) : loadImage(skuImageUrlForOutput(outputId, context)),
     loadImage(
       format.title === "Floating Icon"
         ? (context.floatingLogoRatio === "square"
           ? window.BrandMaxMallOverlays?.["floating-square"]
           : window.BrandMaxMallOverlays?.["floating-horizontal"])
-        : getOverlaySrc(format, context),
+        : isDesignTemplate(context.template) && outputId === "skinny-banner"
+          ? (window.BrandMaxMallOverlays?.["skinny-blank"] || "assets/overlays/skinny-blank-overlay.png")
+          : isDesignTemplate(context.template) && outputId === "banner-card"
+            ? ""
+            : getOverlaySrc(format, context),
     ),
     loadImage(shouldSwapShopeeIcon ? shopeeIconUrl : ""),
     photoOverride ? Promise.resolve(null) : loadImage(getSkuBackgroundSrc(context)),
@@ -4124,9 +4481,26 @@ async function drawOutput(outputId, canvas, options = {}) {
     context.brandLogoUrl ? Promise.resolve(null) : loadImage(BRAND_LOGO_PLACEHOLDER_URL),
     shouldLoadKvImage ? loadImage(context.kvImageUrl) : Promise.resolve(null),
     loadImage(format.title === "Pop Up Banner" ? window.BrandMaxMallOverlays?.["popup-tag"] : ""),
+    loadImage(isDesignTemplate(context.template) && (outputId === "banner-card" || outputId === "skinny-banner")
+      ? SHOPEE_MALL_BANNER_CARD_TAG_URL : ""),
   ]);
 
   ctx.clearRect(0, 0, format.width, format.height);
+  if (isDesignTemplate(context.template) && outputId !== "floating-icon") {
+    drawDesignTemplateOutput(ctx, outputId, format, context, getLayout(format, context), {
+      brandLogo,
+      skuImage,
+      backgroundImage,
+      photoOverride,
+      kvImage,
+      overlay,
+      popupMallTag,
+      inverseShopeeMallTag,
+      brandLogoPlaceholder,
+      exactShopeeMallTag,
+    });
+    return;
+  }
   if (format.title === "Floating Icon") {
     const layout = getLayout(format, context);
     const designBox = { x: 20, y: 30, width: 320, height: 320 };
@@ -4168,7 +4542,7 @@ async function drawOutput(outputId, canvas, options = {}) {
       );
     }
     ctx.restore();
-    drawFloatingIconLogo(ctx, brandLogo, layout.logo, context, outputId);
+    drawFloatingIconLogo(ctx, brandLogo, layout.logo, context, outputId, kvImage);
     drawFloatingIconChrome(ctx, overlay);
     return;
   }
@@ -4375,12 +4749,15 @@ function layerAtCanvasPoint(outputId, layout, point, context = state) {
 
   if (pointInsideBox(point, kspBox) && getKspRenderText(outputId, context)?.trim()) return "ksp";
   if (pointInsideBox(point, layout.logo)) return "logo";
+  // Message Background is above the full-bleed SKU in Designs 2/3, so
+  // clicking its exposed panel must select that image rather than the SKU.
   if (hasKvImage(context) && pointInsideBox(point, layout.kv)) return "kv";
   if (pointInsideBox(point, layout.product)) {
     if (currentLayer === "background" && hasSkuBackground(context)) return "background";
-    if (context.skuImageUrl) return "sku";
+    if (skuImageUrlForOutput(outputId, context)) return "sku";
     if (hasSkuBackground(context)) return "background";
   }
+  if (hasKvImage(context) && pointInsideBox(point, layout.kv)) return "kv";
 
   return null;
 }
@@ -4472,7 +4849,7 @@ function openKspEditor(outputId, canvas, shell, context) {
   const currentText = getKspRenderText(outputId, context);
   const getEditorDisplayText = (value) => {
     const { lines } = resolveFittedTextLayout(measureCtx, value, kspBox, {
-      maxSize: layout.ksp.maxSize,
+      maxSize: getKspAutoMaxSize(outputId, context, layout, value),
       minSize: KSP_AUTOFIT_MIN_SIZE,
       lineHeight: 1.04,
       fixedSize: getKspFontSize(outputId, context),
@@ -4507,7 +4884,7 @@ function openKspEditor(outputId, canvas, shell, context) {
   // disagree with the canvas renderer.
   const applyOverlayLayout = () => {
     const { size, lines, lineHeight } = resolveFittedTextLayout(measureCtx, textarea.value, kspBox, {
-      maxSize: layout.ksp.maxSize,
+      maxSize: getKspAutoMaxSize(outputId, context, layout, textarea.value),
       minSize: KSP_AUTOFIT_MIN_SIZE,
       lineHeight: 1.04,
       fixedSize: getKspFontSize(outputId, context),
@@ -5010,7 +5387,7 @@ function bindSkuDrag(canvas, outputId, context = state, onLayerSelected = null) 
     // Logo has no drag/reposition — only its zoom slider — so clicking the
     // product/KV area while it's the active layer does nothing.
     if (layerKey !== "sku" && layerKey !== "background" && layerKey !== "kv") return;
-    const image = await loadImage(getSkuLayers(context)[layerKey].getImageUrl());
+    const image = await loadImage(getSkuLayers(context)[layerKey].getImageUrl(outputId));
     if (!image) {
       if (didSelectLayer && typeof onLayerSelected === "function") onLayerSelected();
       return;
@@ -5242,7 +5619,7 @@ function createPreviewBlock(outputId, context = state, onRerender = renderPrevie
   const layerOptions = [{ key: "logo", label: "Logo" }];
   // KV sits right after Logo, and only shows up once there's an uploaded KV
   // image to actually drag/zoom (Mall BAU / Mall BAU New Arrival only).
-  if (!isFloatingIcon && hasKvImage(context)) layerOptions.push({ key: "kv", label: "KV" });
+  if (!isFloatingIcon && hasKvImage(context)) layerOptions.push({ key: "kv", label: isDesignTemplate(context.template) ? "Message" : "KV" });
   if (!isFloatingIcon) layerOptions.push({ key: "ksp", label: "KSP" });
   layerOptions.push({ key: "sku", label: "SKU" });
   // Floating Icon's selected preset is an editable image layer too.
@@ -5309,7 +5686,7 @@ function createPreviewBlock(outputId, context = state, onRerender = renderPrevie
         getKspRenderText(outputId, context),
         kspBox.width,
         kspBox.height,
-        kspBox.maxSize,
+        getKspAutoMaxSize(outputId, context, layout),
         KSP_AUTOFIT_MIN_SIZE,
         1.04,
       ).size;
@@ -5331,7 +5708,8 @@ function createPreviewBlock(outputId, context = state, onRerender = renderPrevie
   } else {
     const zoomMin = isLogoActive ? LOGO_ZOOM_MIN : SKU_ZOOM_MIN;
     const zoomMax = isLogoActive ? LOGO_ZOOM_MAX : SKU_ZOOM_MAX;
-    const layerNoun = isLogoActive ? "Logo" : isBackgroundActive ? "Background" : isKvActive ? "KV" : "SKU";
+    const layerNoun = isLogoActive ? "Logo" : isBackgroundActive ? "Background" : isKvActive
+      ? (isDesignTemplate(context.template) ? "Message Background" : "KV") : "SKU";
 
     zoomLabel.textContent = `${layerNoun} Zoom`;
     zoomInput.min = String(zoomMin * 100);
@@ -5344,9 +5722,20 @@ function createPreviewBlock(outputId, context = state, onRerender = renderPrevie
     zoomInput.addEventListener("input", () => {
       activeLayer.setZoom(outputId, Number(zoomInput.value) / 100);
       zoomValue.textContent = `${zoomInput.value}%`;
-      if (canvas) requestCanvasRedraw(outputId, canvas, context);
+      if (isLogoActive) {
+        syncBrandLogoSizeControls(context);
+        // Logo zoom is shared, so repaint every visible format immediately.
+        els.previewList.querySelectorAll("canvas.asset-canvas[data-output]").forEach((otherCanvas) => {
+          requestCanvasRedraw(otherCanvas.dataset.output, otherCanvas, context);
+        });
+      } else if (canvas) {
+        requestCanvasRedraw(outputId, canvas, context);
+      }
     });
-    zoomInput.addEventListener("change", () => commitHistoryEnd(context));
+    zoomInput.addEventListener("change", () => {
+      commitHistoryEnd(context);
+      if (isLogoActive) onRerender();
+    });
   }
 
   zoomControl.append(zoomLabel, zoomInput, zoomValue);
@@ -5379,7 +5768,7 @@ function createPreviewBlock(outputId, context = state, onRerender = renderPrevie
         ? hasKvImage(context)
         : isKspActive
           ? Boolean(getKspRenderText(outputId, context)?.trim())
-          : Boolean(context.skuImageUrl)
+          : Boolean(skuImageUrlForOutput(outputId, context))
     : false;
   if (activeLayerHasImage) canvas.classList.add("can-drag");
   canvas.dataset.output = outputId;
@@ -5405,6 +5794,7 @@ async function renderPreviews() {
   els.previewList.innerHTML = "";
   const context = editingContext();
   syncFloatingIconControls(context);
+  syncBrandLogoSizeControls(context);
   document.documentElement.style.setProperty("--kv", context.kvColor);
   els.templateLabel.textContent = context.template;
   const selected = editingOutputs();
@@ -5577,8 +5967,7 @@ function readFile(input, key, labelKey, labelEl) {
   if (key === "skuImageUrl") {
     // A freshly uploaded photo is a new "pristine" original.
     context.originalSkuImageUrl = context[key];
-    context.skuPositions = {};
-    context.skuZooms = {};
+    resetSharedSkuTransforms(context);
   }
   if (key === "brandLogoUrl") {
     // Same "freshly uploaded = new pristine original" idea as the SKU photo
@@ -5596,7 +5985,7 @@ function readFile(input, key, labelKey, labelEl) {
     context.sku3Positions = {};
     context.sku3Zooms = {};
   }
-  labelEl.textContent = context[labelKey];
+  if (labelEl) labelEl.textContent = context[labelKey];
   if (["skuImageUrl", "brandLogoUrl", "sku2ImageUrl", "sku3ImageUrl"].includes(key)) {
     syncRemoveBgAvailability(context);
   }
@@ -5666,6 +6055,8 @@ function syncEditorFieldsFromContext() {
   const context = editingContext();
   els.brandFileName.textContent = context.brandLogoLabel || "Upload";
   els.skuFileName.textContent = context.skuImageLabel || "Upload";
+  if (els.kspTextInput && document.activeElement !== els.kspTextInput) els.kspTextInput.value = context.ksp || "";
+  syncBrandLogoSizeControls(context);
   if (els.sku2FileName) els.sku2FileName.textContent = context.sku2ImageLabel || "Upload";
   if (els.sku3FileName) els.sku3FileName.textContent = context.sku3ImageLabel || "Upload";
   if (els.skuImageGalleryError) els.skuImageGalleryError.hidden = true;
@@ -5677,6 +6068,10 @@ function syncEditorFieldsFromContext() {
 
   els.templateSelect.value = context.template;
   els.logoContainerToggle.checked = context.hideLogoContainer;
+  const logoContainerLabel = els.logoContainerToggleRow?.querySelector("span:last-child");
+  if (logoContainerLabel) {
+    logoContainerLabel.textContent = "Hide white logo shape";
+  }
   els.shopeeLogoToggle.checked = context.useOrangeShopeeLogo;
   // Checked = tag shown (matches its "Show ... tag" label), so this is the
   // inverse of the internal hideShopeeMallTag flag.
@@ -5705,6 +6100,17 @@ function syncEditorFieldsFromContext() {
 
   syncKvColorAvailability(context);
   renderBackgroundPicker();
+}
+
+function syncBrandLogoSizeControls(context = editingContext()) {
+  if (!els.brandLogoSize) return;
+  // The sidebar and the per-canvas Logo controls expose the same shared
+  // range, so neither can display a stale/clamped value from the other.
+  els.brandLogoSize.min = String(LOGO_ZOOM_MIN * 100);
+  els.brandLogoSize.max = String(LOGO_ZOOM_MAX * 100);
+  const percent = Math.round(getLogoZoom("banner-card", context) * 100);
+  els.brandLogoSize.value = String(percent);
+  if (els.brandLogoSizeValue) els.brandLogoSizeValue.textContent = `${percent}%`;
 }
 
 // Keeps the bulk panel's CSV column hint (and implicitly the "Download
@@ -5953,7 +6359,7 @@ async function createPhotoLayer(outputId, quality, context = state) {
   const format = outputMeta[outputId];
   const layout = getLayout(format, context);
   const [skuImage, backgroundImage] = await Promise.all([
-    loadImage(context.skuImageUrl),
+    loadImage(skuImageUrlForOutput(outputId, context)),
     loadImage(getSkuBackgroundSrc(context)),
   ]);
 
@@ -5963,7 +6369,12 @@ async function createPhotoLayer(outputId, quality, context = state) {
   const photoCtx = photoCanvas.getContext("2d");
   photoCtx.imageSmoothingEnabled = true;
   photoCtx.imageSmoothingQuality = "high";
-  photoCtx.fillStyle = "#FFFFFF";
+  // The softened JPEG layer must be composited over the same product-area
+  // colour as the live Design 1–3 canvas. A white base used to turn
+  // transparent cutout SKUs into a conspicuous white rectangle on export.
+  photoCtx.fillStyle = isDesignTemplate(context.template)
+    ? context.skuBackgroundColor || DESIGN_TEMPLATE_DEFAULTS[context.template].skuBackgroundColor
+    : "#FFFFFF";
   photoCtx.fillRect(0, 0, photoCanvas.width, photoCanvas.height);
 
   if (backgroundImage) {
@@ -6118,7 +6529,11 @@ async function renderExportCanvas(outputId, context = state) {
 }
 
 async function createExportFile(outputId, context = state) {
-  const canvas = await renderExportCanvas(outputId, context);
+  const exportContext = {
+    ...context,
+    exportLocalAssets: window.BrandMaxExportLocalAssets || {},
+  };
+  const canvas = await renderExportCanvas(outputId, exportContext);
   const pngBlob = await encodeCanvas(canvas, EXPORT_TYPE);
   const sizeLimited = SIZE_LIMITED_OUTPUTS.has(outputId);
 
@@ -6165,7 +6580,7 @@ async function createExportFile(outputId, context = state) {
   // Try shrinking by softening only the photo region and keeping the ribbon/logo/text
   // crisp, re-exporting as lossless PNG each time, before falling back to full JPEG.
   for (const quality of PHOTO_SOFTEN_QUALITIES) {
-    const softCanvas = await renderPngWithSoftenedPhoto(outputId, quality, context);
+    const softCanvas = await renderPngWithSoftenedPhoto(outputId, quality, exportContext);
     const softPngBlob = await encodeCanvas(softCanvas, EXPORT_TYPE);
     if (!softPngBlob) continue;
 
@@ -6228,7 +6643,7 @@ async function downloadCanvas(outputId, context = state) {
     );
   } catch (error) {
     console.error("Download failed", error);
-    setStatus(error?.name === "SecurityError" ? "Use local server" : "Download failed");
+    setStatus(error?.name === "SecurityError" ? "An image could not be exported" : "Download failed");
     window.setTimeout(() => setStatus("Ready"), 1800);
   }
 }
@@ -7147,13 +7562,21 @@ async function generateBulk() {
 els.templateSelect.addEventListener("change", (event) => {
   const context = editingContext();
   commitHistoryStart(context);
+  // A template switch changes the arrangement, not the campaign design.
+  // Keep the current colors, artwork, logo treatment, KSP edits, and
+  // per-format adjustments so users can compare layouts without redoing work.
   context.template = event.target.value;
   if (isShopeeLiveFsTemplate(context.template)) ensureShopeeLiveFsFields(context);
   syncKvColorAvailability(context);
   syncOutputAvailability(context);
+  if (isDesignTemplate(context.template) && context.outputs.size === 0) {
+    context.outputs.add("banner-card");
+    syncOutputButtons();
+  }
   syncShopeeLiveFsVisibility(context);
   syncRemoveBgAvailability(context);
   syncBulkCsvHint();
+  syncEditorFieldsFromContext();
   commitHistoryEnd(context);
   renderPreviews();
   if (activeRow) renderBulkRows();
@@ -7162,6 +7585,28 @@ els.templateSelect.addEventListener("change", (event) => {
 els.brandLogoInput.addEventListener("change", () => {
   commitHistoryStart(editingContext());
   readFile(els.brandLogoInput, "brandLogoUrl", "brandLogoLabel", els.brandFileName);
+  commitHistoryEnd(editingContext());
+});
+
+els.brandLogoSize?.addEventListener("pointerdown", () => commitHistoryStart(editingContext()));
+els.brandLogoSize?.addEventListener("input", () => {
+  const context = editingContext();
+  setLogoZoom("banner-card", Number(els.brandLogoSize.value) / 100, context);
+  syncBrandLogoSizeControls(context);
+  renderPreviews();
+});
+els.brandLogoSize?.addEventListener("change", () => commitHistoryEnd(editingContext()));
+
+els.kspTextInput?.addEventListener("focus", () => commitHistoryStart(editingContext()));
+els.kspTextInput?.addEventListener("input", () => {
+  const context = editingContext();
+  context.ksp = normalizedKsp(normalizeKspPlainText(els.kspTextInput.value));
+  context.kspManualBreaksByOutput = {};
+  if (activeRow) activeRow.kspRaw = context.ksp;
+  renderPreviews();
+});
+els.kspTextInput?.addEventListener("blur", () => {
+  els.kspTextInput.value = editingContext().ksp || "";
   commitHistoryEnd(editingContext());
 });
 
@@ -7851,6 +8296,8 @@ function initHomepagePreview() {
     phone.classList.toggle("is-popup-preview", previewState.page === "popup");
     previous.classList.toggle("is-active", previewState.page === "homepage");
     next.classList.toggle("is-active", previewState.page === "popup");
+    previous.setAttribute("aria-pressed", String(previewState.page === "homepage"));
+    next.setAttribute("aria-pressed", String(previewState.page === "popup"));
     next.disabled = !canShowPopup;
   }
 
@@ -7869,7 +8316,7 @@ function initHomepagePreview() {
     await Promise.all([...snapshot.querySelectorAll("canvas[data-home-canvas]")].map(async (canvas) => {
       if (canvas.hidden) return;
       try {
-        await drawPreviewCanvas(canvas.dataset.homeCanvas, canvas);
+        if (!(await drawPreviewCanvas(canvas.dataset.homeCanvas, canvas))) canvas.hidden = true;
       } catch (error) {
         console.warn(`Expanded homepage preview could not draw ${canvas.dataset.homeCanvas}`, error);
         canvas.hidden = true;
@@ -7904,7 +8351,9 @@ function initHomepagePreview() {
     const isBlank = document.querySelector("#workflowCanvas")?.value === "blank";
     if (isBlank && previewState.blankRenderer) {
       const sourceCanvas = await previewState.blankRenderer(id);
-      if (!sourceCanvas) throw new Error(`Blank artwork was not available for ${id}.`);
+      // An untouched Blank placement simply has nothing to mirror yet.
+      // Keep its guide visible without flooding the console with warnings.
+      if (!sourceCanvas) return false;
       targetCanvas.width = sourceCanvas.width;
       targetCanvas.height = sourceCanvas.height;
       const targetContext = targetCanvas.getContext("2d");
@@ -7912,13 +8361,14 @@ function initHomepagePreview() {
       // Drawing a local file canvas is allowed for on-screen display even
       // though file:// prevents serialising it to a data URL.
       targetContext.drawImage(sourceCanvas, 0, 0);
-      return;
+      return true;
     }
     const previewContext = {
       ...editingContext(),
       previewLocalAssets: window.BrandMaxPreviewLocalAssets || {},
     };
     await drawOutput(id, targetCanvas, { context: previewContext });
+    return true;
   }
 
   async function refresh() {
@@ -7941,8 +8391,8 @@ function initHomepagePreview() {
       if (outputCanvas) {
         image.hidden = true;
         try {
-          await drawPreviewCanvas(id, outputCanvas);
-          if (revision === previewState.revision) outputCanvas.hidden = false;
+          const drewArtwork = await drawPreviewCanvas(id, outputCanvas);
+          if (revision === previewState.revision) outputCanvas.hidden = !drewArtwork;
         } catch (error) {
           console.warn(`Homepage preview could not draw ${id}`, error);
           outputCanvas.hidden = true;
@@ -8002,7 +8452,10 @@ function initHomepagePreview() {
       const nav = phone.querySelector(".iphone-floating-nav");
       const navRect = nav.getBoundingClientRect();
       const speakerRect = phone.querySelector(".iphone-speaker").getBoundingClientRect();
-      const density = 2;
+      // Export at approximately native iPhone screen resolution, while all
+      // placement coordinates still come from the visible CSS layout. This
+      // keeps the phone's proportions and the current scroll position exact.
+      const density = Math.max(3, 1179 / Math.max(1, screenRect.width));
       const capture = document.createElement("canvas");
       capture.width = Math.round(frameRect.width * density);
       capture.height = Math.round(frameRect.height * density);
@@ -8014,18 +8467,35 @@ function initHomepagePreview() {
         height: rect.height * density,
       });
       const frameBox = { x: 0, y: 0, width: capture.width, height: capture.height };
-      captureContext.fillStyle = "#171717";
+      captureContext.save();
       roundRect(captureContext, frameBox.x, frameBox.y, frameBox.width, frameBox.height, 33 * density);
-      captureContext.fill();
+      captureContext.clip();
+      captureContext.fillStyle = "#171717";
+      captureContext.fillRect(frameBox.x, frameBox.y, frameBox.width, frameBox.height);
       const screenBox = relativeRect(screenRect);
       captureContext.save();
       roundRect(captureContext, screenBox.x, screenBox.y, screenBox.width, screenBox.height, 20 * density);
       captureContext.clip();
+      captureContext.fillStyle = "#f4f4f4";
+      captureContext.fillRect(screenBox.x, screenBox.y, screenBox.width, screenBox.height);
       const homeBox = relativeRect(homeRect);
       captureContext.drawImage(baseImage, homeBox.x, homeBox.y, homeBox.width, homeBox.height);
       // Hide the baked-in guide navigation, matching the on-screen mask.
       captureContext.fillStyle = "#f4f4f4";
       captureContext.fillRect(homeBox.x, homeBox.y + homeBox.height * .91, homeBox.width, homeBox.height * .09);
+      // The placement guide has a green Skinny test block, including pale
+      // antialiased edge pixels. Mirror the on-screen underlay in the export
+      // and rasterize its edges at whole pixels so no green seam can survive.
+      const skinnyMask = home.querySelector(".homepage-skinny-guide-mask");
+      if (skinnyMask) {
+        const maskBox = relativeRect(skinnyMask.getBoundingClientRect());
+        const maskLeft = Math.floor(maskBox.x);
+        const maskTop = Math.floor(maskBox.y);
+        const maskRight = Math.ceil(maskBox.x + maskBox.width);
+        const maskBottom = Math.ceil(maskBox.y + maskBox.height);
+        captureContext.fillStyle = "#f1f1f1";
+        captureContext.fillRect(maskLeft, maskTop, maskRight - maskLeft, maskBottom - maskTop);
+      }
       const drawOutputCanvas = (id) => {
         const node = phone.querySelector(`canvas[data-home-canvas="${id}"]`);
         if (!node || node.hidden) return;
@@ -8040,13 +8510,22 @@ function initHomepagePreview() {
         captureContext.fillRect(screenBox.x, screenBox.y, screenBox.width, screenBox.height);
         drawOutputCanvas("pop-up-banner");
       }
+      const navBox = relativeRect(navRect);
+      captureContext.save();
+      captureContext.shadowColor = "rgba(0,0,0,.16)";
+      captureContext.shadowBlur = 4 * density;
+      captureContext.shadowOffsetY = -2 * density;
+      captureContext.drawImage(navImage, navBox.x, navBox.y, navBox.width, navBox.height);
+      captureContext.restore();
+      // The navigation is part of the screen, not a separate rectangle over
+      // the phone frame. Keep its white lower corners inside the same rounded
+      // screen mask as the banner artwork.
       captureContext.restore();
       const speakerBox = relativeRect(speakerRect);
       captureContext.fillStyle = "#050505";
       roundRect(captureContext, speakerBox.x, speakerBox.y, speakerBox.width, speakerBox.height, speakerBox.height / 2);
       captureContext.fill();
-      const navBox = relativeRect(navRect);
-      captureContext.drawImage(navImage, navBox.x, navBox.y, navBox.width, navBox.height);
+      captureContext.restore();
       const blob = await new Promise((resolve, reject) => capture.toBlob((value) => value ? resolve(value) : reject(new Error("Preview capture failed.")), "image/png"));
       downloadBlob(blob, "shopee-homepage-preview.png");
     } catch (error) {
@@ -8089,16 +8568,15 @@ function setStoredTheme(theme) {
 
 function applyTheme(isLight) {
   if (isLight) document.documentElement.setAttribute("data-theme", "light");
-  else document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", "dark");
   // The brand logo file itself is baked for one background or the other
   // (white/red wordmark for the light UI, white-on-transparent for the dark
   // UI) — swap the actual image, not just a CSS filter, so it stays crisp
-  // and on-brand either way. See assets/branding/ and the two source files'
-  // names in the Branding folder for which is which.
+  // and on-brand either way. The same pair is used in the new home shell.
   if (els.brandLogo) {
     els.brandLogo.src = isLight
-      ? "assets/branding/logo-light-ui.png"
-      : "assets/branding/logo-dark-ui.png";
+      ? "assets/branding/home/brandmax-light.png"
+      : "assets/branding/home/brandmax-dark.png";
   }
   if (!els.themeToggle) return;
   els.themeToggle.setAttribute("aria-pressed", String(isLight));
@@ -8109,8 +8587,8 @@ function applyTheme(isLight) {
 }
 
 function initTheme() {
-  // Dark is the default; only an explicit "light" preference switches it off.
-  applyTheme(getStoredTheme() === "light");
+  // Light is the default; a saved dark preference is retained across visits.
+  applyTheme(getStoredTheme() !== "dark");
 }
 
 els.themeToggle?.addEventListener("click", () => {

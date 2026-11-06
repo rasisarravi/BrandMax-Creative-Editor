@@ -11,18 +11,23 @@
   const originalDownload = document.querySelector('#downloadAllButton');
   const reviewPreview = document.querySelector('#reviewPreview');
   const reviewStatus = document.querySelector('#reviewStatus');
+  const reviewerHeading = document.querySelector('.review-panel > h2:first-of-type');
+  const reviewerBox = document.querySelector('.review-panel > .review-box');
+  const reviewerGuidelines = document.querySelector('#bmOpenGuidelines');
+  const reviewButton = document.querySelector('#startReview');
   const exactMallOverlays = window.BrandMaxMallOverlays || {};
 
   const outputs = {
     'banner-card': { title: 'Banner Card', meta: '531 x 792px', width: '375px', ratio: '531 / 792', canvasWidth: 531, canvasHeight: 792, overlay: exactMallOverlays['banner-card'] || 'Template/Shopee%20Mall%20tag%20Overlay/Mall%20BAU%20Template_Mall_BAU_26-29mei_Banner%20Card_01%20copy.png' },
     'pop-up-banner': { title: 'Pop Up Banner', meta: '580 x 720px', width: '390px', ratio: '580 / 720', canvasWidth: 580, canvasHeight: 720, designBox: { x: 36, y: 30, width: 507, height: 654 }, mallTag: exactMallOverlays['popup-tag'] || 'Template/Pop%20Up%20Banner/Blank/Pop-Up-template-shopee-mall-tag.png', cta: exactMallOverlays['popup-cta'] || 'Template/Pop%20Up%20Banner/Blank/Pop-Up-template-CTA.png' },
-    'skinny-banner': { title: 'Skinny Banner', meta: '1200 x 360px', width: '720px', ratio: '1200 / 360', canvasWidth: 1200, canvasHeight: 360, designBox: { x: 46, y: 39, width: 1108, height: 280 }, overlay: 'assets/overlays/skinny-blank-overlay.png' },
+    'skinny-banner': { title: 'Skinny Banner', meta: '1200 x 360px', width: '720px', ratio: '1200 / 360', canvasWidth: 1200, canvasHeight: 360, designBox: { x: 46, y: 39, width: 1108, height: 280 }, overlay: exactMallOverlays['skinny-blank'] || 'assets/overlays/skinny-blank-overlay.png' },
     'floating-icon': { title: 'Floating Icon', meta: '360 x 360px', width: '360px', ratio: '1 / 1', canvasWidth: 360, canvasHeight: 360, designBox: { x: 20, y: 30, width: 320, height: 320 }, overlay: exactMallOverlays['floating-horizontal'] || 'assets/overlays/floating-horizontal-overlay.png' }
   };
   const blankUploads = new Map();
   const blankEdits = new Map();
   const canvasOverlayCache = new Map();
   let reviewedOutputId = null;
+  let reviewGeneration = 0;
   let floatingBlankLogoRatio = 'horizontal';
   let floatingBlankLogo = null;
   let floatingBlankLogoScale = 100;
@@ -95,6 +100,12 @@
         canvas.width = item.canvasWidth;
         canvas.height = item.canvasHeight;
         const context = canvas.getContext('2d');
+        if (id === 'skinny-banner') {
+          // The supplied guide is immutable; its transparent center reveals
+          // artwork, while this base makes every exported Skinny pixel opaque.
+          context.fillStyle = '#F1F1F1';
+          context.fillRect(0, 0, canvas.width, canvas.height);
+        }
         const box = item.designBox;
         const baseScale = Math.max(box.width / design.naturalWidth, box.height / design.naturalHeight);
         const scale = baseScale * (1 + editFor(id).scale / 100);
@@ -104,9 +115,8 @@
         const x = box.x + (box.width - width) / 2 + edit.x / (frame?.clientWidth || canvas.width) * canvas.width;
         const y = box.y + (box.height - height) / 2 + edit.y / (frame?.clientHeight || canvas.height) * canvas.height;
         context.save();
-        // The supplied Blank Pop Up guide contains a rounded design boundary.
-        // It is a clip only: all space outside the uploaded artwork stays
-        // transparent in the final PNG.
+        // The fixed overlay supplies the visible rounded boundary. The clip
+        // prevents user artwork from crossing into its surrounding chrome.
         if (item.title === 'Floating Icon') {
           context.beginPath();
           context.arc(180, 190, 160, 0, Math.PI * 2);
@@ -183,12 +193,12 @@
     const edgeRatio = edges / samples;
     const findings = [];
     if (lightRatio > .5 || lowContrastLightRatio > .16) {
-      findings.push('Replace the bright near-white background with a stronger KV colour or add contrast so the banner does not blend into the Shopee interface.');
+      findings.push('Replace the bright near-white background with a stronger Message Background colour or add contrast so the banner does not blend into the Shopee interface.');
       findings.push('Reduce the product grid to 2–3 SKUs and enlarge each product image so the products are clearly visible.');
       findings.push('Increase the SKU name and price font size so shoppers can read the product details at a glance.');
     }
     if (contrast < 39) findings.push('Increase contrast between the promo message, product image, and background to improve readability.');
-    if (saturationRatio < .09) findings.push('Add a clearer brand or KV colour to strengthen the visual hierarchy.');
+    if (saturationRatio < .09) findings.push('Add a clearer brand or Message Background colour to strengthen the visual hierarchy.');
     if (edgeRatio < .055) findings.push('Increase the product image size or contrast so the main product is easier to recognise at a glance.');
     if (edgeRatio > .19 && contrast < 56) findings.push('Increase the promo message font size and contrast to improve readability.');
     if (!findings.length) findings.push('Increase separation between the brand logo, promo message, and product image to make the reading order clearer.');
@@ -196,15 +206,19 @@
   }
 
   function displayReview(canvas, item) {
+    if (templateMode.value !== 'blank') return;
     reviewPreview.innerHTML = '';
     const image = new Image();
     image.alt = `Reviewed ${item.title}`;
     image.src = canvas.toDataURL('image/png');
     reviewPreview.append(image);
+    reviewPreview.hidden = false;
     reviewStatus.innerHTML = `<p><b>Visual suggestions for ${item.title}</b></p><ul>${visualSuggestions(canvas, item).map((finding) => `<li>${finding}</li>`).join('')}</ul>`;
   }
 
   async function reviewBlankOutput(id) {
+    if (templateMode.value !== 'blank') return;
+    const generation = reviewGeneration;
     const item = outputs[id];
     if (!item || !blankUploads.has(id)) {
       showReview('Upload a design for one of the selected outputs to receive visual suggestions.');
@@ -213,9 +227,11 @@
     showReview(`Analysing the rendered ${item.title}…`);
     try {
       const canvas = await createBlankArtworkCanvas(id);
-      if (canvas) displayReview(canvas, item);
+      if (generation === reviewGeneration && templateMode.value === 'blank' && canvas) displayReview(canvas, item);
     } catch {
-      showReview('The selected image could not be analysed. Try uploading a PNG, JPG, or WebP design again.');
+      if (generation === reviewGeneration && templateMode.value === 'blank') {
+        showReview('The selected image could not be analysed. Try uploading a PNG, JPG, or WebP design again.');
+      }
     }
   }
 
@@ -425,9 +441,12 @@
       const file = await createUnderLimitBlankFile(id);
       // Pop Up stays transparent PNG and prioritises the supplied artwork's
       // colour quality if a browser PNG encoder cannot reach 250KB exactly.
-      const maxBytes = outputs[id].title === 'Skinny Banner' ? 700 * 1000 : outputs[id].title === 'Banner Card' ? 500 * 1000 : EXPORT_MAX_BYTES;
+      const maxBytes = outputs[id].title === 'Banner Card' ? 500 * 1000 : EXPORT_MAX_BYTES;
       const isTransparentPng = Boolean(outputs[id].mallTag) || outputs[id].title === 'Floating Icon';
-      if (!file || (!isTransparentPng && file.blob.size > maxBytes)) {
+      // Skinny must remain a full-quality, opaque PNG even when detailed
+      // uploaded artwork makes the file larger than the older 700 KB cap.
+      const isOpaqueSkinnyPng = id === 'skinny-banner' && file?.extension === 'png';
+      if (!file || (!isTransparentPng && !isOpaqueSkinnyPng && file.blob.size > maxBytes)) {
         throw new Error('Cannot meet export limit');
       }
       const link = document.createElement('a');
@@ -437,8 +456,11 @@
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(link.href), 30000);
-    } catch {
-      showReview('The export could not be prepared under 250KB. Try using a less detailed design image.');
+    } catch (error) {
+      console.error('Blank banner download failed', error);
+      showReview(error?.name === 'SecurityError'
+        ? 'This image cannot be saved from the current page. Please re-upload the design and try again.'
+        : 'The export could not be prepared. Try using a less detailed design image.');
     }
   }
 
@@ -467,13 +489,12 @@
       const isBounded = Boolean(item.designBox);
       const isPopup = Boolean(item.mallTag);
       const isFloating = id === 'floating-icon';
-      const overlaySrc = isFloating
-        ? (floatingBlankLogoRatio === 'square'
-          ? 'assets/overlays/floating-square-overlay.png'
-          : 'assets/overlays/floating-horizontal-overlay.png')
-        : item.overlay;
+      // The selected overlay is already resolved to the embedded deployment
+      // asset (and updated when the logo ratio changes). Keep the on-screen
+      // guide on that same source as the export canvas.
+      const overlaySrc = item.overlay;
       const boxStyle = isBounded ? `--design-x:${item.designBox.x / item.canvasWidth * 100}%;--design-y:${item.designBox.y / item.canvasHeight * 100}%;--design-w:${item.designBox.width / item.canvasWidth * 100}%;--design-h:${item.designBox.height / item.canvasHeight * 100}%;` : '';
-      const popupOverlays = isPopup ? `<img class="blank-popup-tag" src="${item.mallTag}" alt="Mandatory Shopee Mall tag overlay" /><img class="blank-popup-cta" src="${item.cta}" alt="Mandatory CTA overlay" />` : `<img class="blank-mall-tag" src="${overlaySrc}" alt="Mandatory Floating Icon overlay" />`;
+      const popupOverlays = isPopup ? `<img class="blank-popup-tag" src="${item.mallTag}" alt="Mandatory Shopee Mall tag overlay" /><img class="blank-popup-cta" src="${item.cta}" alt="Mandatory CTA overlay" />` : `<img class="blank-mall-tag" src="${overlaySrc}" alt="Mandatory ${item.title} overlay" />`;
       const floatingLogoBox = floatingBlankLogoRatio === 'square'
         ? { x: 132, y: 20, width: 96, height: 80 }
         : { x: 61, y: 20, width: 238, height: 80 };
@@ -591,11 +612,85 @@
     const blank = templateMode.value === 'blank';
     document.documentElement.classList.toggle('blank-mode', blank);
     blankCard.hidden = !blank;
-    if (!blank) showReview('Generate a banner, then select Refresh suggestions to analyse its rendered preview.');
+    reviewGeneration += 1;
+    reviewerHeading.hidden = !blank;
+    reviewerBox.hidden = !blank;
+    reviewerGuidelines.hidden = !blank;
+    reviewButton.disabled = !blank;
+    reviewPreview.replaceChildren();
+    reviewPreview.hidden = true;
+    if (blank) showReview('Upload a design, then select Analyse design for tailored suggestions.');
+    else { reviewedOutputId = null; reviewStatus.replaceChildren(); }
     window.BrandMaxHomepagePreview?.refresh();
   }
 
-  templateMode.addEventListener('change', syncTemplate);
+  function clearBlankArtwork() {
+    blankUploads.forEach((upload) => URL.revokeObjectURL(upload.url));
+    blankUploads.clear();
+    blankEdits.clear();
+    if (floatingBlankLogo) URL.revokeObjectURL(floatingBlankLogo.url);
+    floatingBlankLogo = null;
+    floatingBlankLogoRatio = 'horizontal';
+    floatingBlankLogoScale = 100;
+    reviewedOutputId = null;
+    outputs['floating-icon'].overlay = exactMallOverlays['floating-horizontal'] || 'assets/overlays/floating-horizontal-overlay.png';
+  }
+
+  // Keep Blank artwork in browser-local projects without persisting temporary
+  // blob: URLs. IndexedDB can store the original File/Blob objects directly.
+  window.BrandMaxBlankState = Object.freeze({
+    snapshot() {
+      return {
+        uploads: [...blankUploads].map(([id, upload]) => [id, upload.file]),
+        edits: [...blankEdits].map(([id, edit]) => [id, { ...edit }]),
+        logoFile: floatingBlankLogo?.file || null,
+        logoRatio: floatingBlankLogoRatio,
+        logoScale: floatingBlankLogoScale,
+      };
+    },
+    restore(saved = {}) {
+      clearBlankArtwork();
+      for (const [id, file] of saved.uploads || []) {
+        if (outputs[id] && file instanceof Blob) {
+          blankUploads.set(id, { file, url: URL.createObjectURL(file) });
+        }
+      }
+      for (const [id, edit] of saved.edits || []) {
+        if (outputs[id] && edit && typeof edit === 'object') {
+          blankEdits.set(id, { scale: Number(edit.scale) || 0, x: Number(edit.x) || 0, y: Number(edit.y) || 0 });
+        }
+      }
+      floatingBlankLogoRatio = saved.logoRatio === 'square' ? 'square' : 'horizontal';
+      floatingBlankLogoScale = Number(saved.logoScale) || 100;
+      if (saved.logoFile instanceof Blob) {
+        floatingBlankLogo = { file: saved.logoFile, url: URL.createObjectURL(saved.logoFile) };
+      }
+      outputs['floating-icon'].overlay = floatingBlankLogoRatio === 'square'
+        ? (exactMallOverlays['floating-square'] || 'assets/overlays/floating-square-overlay.png')
+        : (exactMallOverlays['floating-horizontal'] || 'assets/overlays/floating-horizontal-overlay.png');
+      renderBlankPreviews();
+    },
+    reset() {
+      clearBlankArtwork();
+      renderBlankPreviews();
+    },
+  });
+
+  templateMode.addEventListener('change', () => {
+    if (templateMode.value !== 'blank') {
+      // Reopening a Blank project may leave the Standard selector on the
+      // chosen design already. Dispatch even in that case so the editor
+      // controls and selected output stay in sync.
+      if (template.value !== templateMode.value) template.value = templateMode.value;
+      template.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    syncTemplate();
+  });
+  template.addEventListener('change', () => {
+    if (templateMode.value !== 'blank' && ['Design 1', 'Design 2', 'Design 3'].includes(template.value)) {
+      templateMode.value = template.value;
+    }
+  });
   outputToggle.addEventListener('click', () => {
     const open = outputMenu.hidden;
     outputMenu.hidden = !open;
@@ -633,15 +728,9 @@
     if (!selectedOutputs().some((id) => blankUploads.has(id))) { reviewStatus.textContent = 'Upload at least one finished design before downloading.'; return; }
     selectedOutputs().filter((id) => blankUploads.has(id)).forEach((id) => downloadBlankOutput(id));
   });
-  document.querySelector('#startReview').addEventListener('click', () => {
-    if (templateMode.value === 'blank') return reviewBlankOutput(reviewedOutputId || selectedOutputs().find((id) => blankUploads.has(id)));
-    const previewCanvas = document.querySelector('canvas.asset-canvas');
-    if (!previewCanvas) return showReview('Generate a banner preview before requesting visual suggestions.');
-    const item = Object.values(outputs).find((output) => output.title === previewCanvas.closest('.preview-block')?.querySelector('.preview-title')?.textContent) || { title: 'banner', canvasWidth: previewCanvas.width, canvasHeight: previewCanvas.height };
-    const copiedCanvas = document.createElement('canvas');
-    copiedCanvas.width = previewCanvas.width; copiedCanvas.height = previewCanvas.height;
-    copiedCanvas.getContext('2d').drawImage(previewCanvas, 0, 0);
-    displayReview(copiedCanvas, item);
+  reviewButton.addEventListener('click', () => {
+    if (templateMode.value !== 'blank') return;
+    reviewBlankOutput(reviewedOutputId || selectedOutputs().find((id) => blankUploads.has(id)));
   });
   syncOutputs();
   syncTemplate();

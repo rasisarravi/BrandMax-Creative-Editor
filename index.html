@@ -1,24 +1,24 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="home-active" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Campaign Creative Generator Prototype</title>
+    <title>BrandMax Creative</title>
+    <link rel="icon" type="image/png" href="assets/branding/home/brandmax-light.png" />
     <script>
-      // Applied before first paint so returning visitors who chose light mode
-      // don't see a flash of the default dark theme. Dark stays the default
-      // whenever nothing has been saved yet.
+      // Light is the default. Apply a previously chosen dark theme before the
+      // stylesheet loads, so neither returning nor first-time visitors flash.
       (function () {
         try {
-          if (localStorage.getItem("shopeeMallTheme") === "light") {
-            document.documentElement.setAttribute("data-theme", "light");
-          }
+          document.documentElement.setAttribute("data-theme",
+            localStorage.getItem("shopeeMallTheme") === "dark" ? "dark" : "light");
         } catch (error) {
           // Ignore storage access errors (e.g. private browsing).
         }
       })();
     </script>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=20261106-workspace-v9" />
+    <link rel="stylesheet" href="home.css?v=20261106-workspace-v9" />
   </head>
   <body>
     <button
@@ -26,7 +26,7 @@
       id="themeToggle"
       class="theme-toggle"
       aria-pressed="false"
-      aria-label="Switch to light mode"
+      aria-label="Switch to dark mode"
       title="Toggle light / dark mode"
     >
       <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -95,10 +95,10 @@
     </details>
 
     <header class="workflow-topbar" aria-label="BrandMax Creative workflow">
-      <img class="workflow-brand" src="assets/branding/logo-dark-ui.png" alt="BrandMax Creative" />
+      <img class="workflow-brand" src="assets/branding/home/brandmax-dark.png" alt="BrandMax Creative" />
       <span class="workflow-divider" aria-hidden="true"></span>
       <div class="workflow-field"><label>Campaign</label><div class="workflow-single-value">Regular</div></div>
-      <div class="workflow-field"><label for="workflowCanvas">Template</label><select id="workflowCanvas"><option value="blank">Blank</option><option value="standard" selected>Standard</option></select></div>
+      <div class="workflow-field"><label for="workflowCanvas">Design template</label><select id="workflowCanvas"><option value="Design 1" selected>Design 1</option><option value="Design 2">Design 2</option><option value="Design 3">Design 3</option><option value="blank">Blank canvas</option></select></div>
       <div class="workflow-field workflow-output-field"><label for="workflowOutputToggle">Output</label><div class="workflow-output-menu"><button type="button" id="workflowOutputToggle" aria-expanded="false"><span id="workflowOutputSummary">Banner Card</span><span class="workflow-chevron" aria-hidden="true">⌄</span></button><div id="workflowOutputMenu" class="workflow-output-popover" hidden><label><input type="checkbox" value="banner-card" checked /> Banner Card <small>531 × 792</small></label><label><input type="checkbox" value="pop-up-banner" /> Pop Up Banner <small>580 × 720</small></label><label><input type="checkbox" value="skinny-banner" /> Skinny Banner <small>1200 × 360</small></label><label><input type="checkbox" value="floating-icon" /> Floating Icon <small>360 × 360</small></label></div></div></div>
       <button type="button" class="workflow-download" id="workflowDownload">Download All</button>
     </header>
@@ -106,24 +106,22 @@
     <main class="app-shell" aria-label="BrandMax Creative">
       <aside class="control-panel" aria-label="Creative inputs">
         <div class="panel-heading">
-          <img class="brand-logo" id="brandLogo" src="assets/branding/logo-dark-ui.png" alt="Banner Generator" />
+          <img class="brand-logo" id="brandLogo" src="assets/branding/home/brandmax-dark.png" alt="BrandMax Creative" />
           <h1>Generate campaign assets</h1>
         </div>
         <form class="input-stack">
-          <div class="form-row">
+          <div class="form-row" id="editorTemplateRow">
             <label for="templateSelect">Template</label>
             <div class="field-wrap">
               <select id="templateSelect" name="template">
-                <option>Mall BAU</option>
-                <option>Mall BAU New Arrival</option>
-                <option>8.8 Paying Seller</option>
-                <option>9.9 Paying Seller</option>
-                <option>Shopee Live Flash Sale</option>
+                <option value="Design 1">Design 1</option>
+                <option value="Design 2">Design 2</option>
+                <option value="Design 3">Design 3</option>
               </select>
             </div>
           </div>
 
-          <div class="form-row">
+          <div class="form-row editor-section-start" id="brandLogoSection">
             <label for="brandLogoInput">Brand Logo</label>
             <div class="field-wrap">
               <input id="brandLogoInput" type="file" accept="image/*" />
@@ -137,6 +135,7 @@
               <span class="toggle-track" aria-hidden="true"></span>
               <span>Hide white logo container</span>
             </label>
+            <label class="editor-range span-wide" for="brandLogoSize"><span>Logo size</span><input id="brandLogoSize" type="range" min="50" max="300" step="1" value="100" /><output id="brandLogoSizeValue" for="brandLogoSize">100%</output></label>
           </div>
 
           <div class="form-row">
@@ -149,32 +148,20 @@
                 Touch Up
               </button>
             </div>
-            <p class="field-hint">
-              Same as SKU Image below — runs locally in your browser, nothing is uploaded. Touch Up lets you erase leftover bits or restore over-erased areas of the logo by hand.
-            </p>
             <p class="field-hint is-error" id="removeLogoBgError" hidden></p>
           </div>
 
-          <div class="form-row" id="inverseLogoRow">
-            <label for="shopeeLogoToggle">Inverse Logo</label>
+          <div class="form-row editor-section-start" id="inverseLogoRow">
+            <label for="shopeeLogoToggle">Shopee Mall tag</label>
             <label class="toggle-row span-wide" for="shopeeLogoToggle">
               <input id="shopeeLogoToggle" type="checkbox" />
               <span class="toggle-track" aria-hidden="true"></span>
-              <span>Invert the logo color if the KV color is light</span>
+              <span>Use the inverse Shopee Mall tag</span>
             </label>
+            <p class="field-hint">The Shopee Mall tag stays on every banner.</p>
           </div>
 
-          <div class="form-row" id="shopeeMallLogoRow">
-            <label for="shopeeMallLogoToggle">Shopee Mall Logo</label>
-            <label class="toggle-row span-wide" for="shopeeMallLogoToggle">
-              <input id="shopeeMallLogoToggle" type="checkbox" checked />
-              <span class="toggle-track" aria-hidden="true"></span>
-              <span>Show "Shopee Mall | 100% ORI" tag</span>
-            </label>
-            <p class="field-hint">Turn off to remove the tag from every output. Not available for any Paying Seller template (8.8, 9.9), whose tag is part of a fixed campaign background.</p>
-          </div>
-
-          <div class="form-row two-field-row">
+          <div class="form-row two-field-row editor-section-start" id="skuImageSection">
             <label for="skuImageInput" id="skuImageFieldLabel">SKU Image</label>
             <div class="field-wrap">
               <input id="skuImageInput" type="file" accept="image/*" />
@@ -212,9 +199,7 @@
                 Touch Up
               </button>
             </div>
-            <p class="field-hint">
-              Remove Background runs locally in your browser — the image is never uploaded anywhere. First use downloads a one-time ~80MB model (cached after that); repeat uses are fast. Touch Up lets you erase leftover bits or restore over-erased areas by hand.
-            </p>
+            <p class="field-hint">Runs in your browser. First use downloads an approximately 80 MB model.</p>
             <p class="field-hint is-error" id="removeBgError" hidden></p>
           </div>
 
@@ -293,7 +278,6 @@
                 <button type="button" id="bgNextButton">Next</button>
               </div>
             </div>
-            <p class="field-hint">Only shows through transparent SKU photos. Pick “None” to use a flat color instead.</p>
           </div>
 
           <div class="form-row" id="skuBgColorRow">
@@ -309,12 +293,13 @@
                 <input id="skuBgColorHex" type="text" value="#FFF3F6" maxlength="7" />
               </label>
             </div>
-            <p class="field-hint" id="skuBgColorHint">Fills the product area behind a transparent SKU photo when no background scene is selected.</p>
+            <p class="field-hint" id="skuBgColorHint">Shown behind the product image when no scene is selected.</p>
           </div>
 
-          <div class="form-row" id="kspHintRow">
-            <label>KSP</label>
-            <p class="field-hint span-wide">Double-click the KSP text directly on a banner preview to edit it (switch that card's layer to <strong>KSP</strong> first if it isn't already). Typing updates every banner at once; pressing Enter to force a line break only affects the banner you're editing.</p>
+          <div class="form-row editor-section-start" id="kspHintRow">
+            <label for="kspTextInput">KSP text</label>
+            <textarea id="kspTextInput" class="editor-ksp-input span-wide" rows="3" spellcheck="false" aria-label="KSP text">EXCLUSIVE LAUNCH DISKON 25%</textarea>
+            <p class="field-hint span-wide">You can also double-click the text on a banner.</p>
           </div>
 
           <div class="form-row" id="kspColorFieldRow">
@@ -332,9 +317,9 @@
             </div>
           </div>
 
-          <div class="form-row color-row" id="kvColorRow">
-            <label for="hexInput">KV</label>
-            <div class="kv-mode-toggle span-wide" id="kvModeToggle" role="group" aria-label="KV background mode">
+          <div class="form-row color-row editor-section-start" id="kvColorRow">
+            <label for="hexInput">Message Background</label>
+            <div class="kv-mode-toggle span-wide" id="kvModeToggle" role="group" aria-label="Message background mode">
               <button type="button" class="chip-button sm is-active" data-kv-mode="color">Color</button>
               <button type="button" class="chip-button sm" data-kv-mode="image">Image</button>
             </div>
@@ -375,14 +360,10 @@
                   <span id="kvImageFileName">Upload</span>
                 </label>
               </div>
-              <p class="field-hint">
-                Recommended at least 1080×850px (the largest KV area, IG Story) so it stays sharp once cropped per format. Supports JPG, PNG, or WebP. After uploading, use the <strong>KV</strong> option in each preview card's edit-target switch to drag its position and zoom per output.
-              </p>
+              <p class="field-hint">Reposition or zoom this image on each banner preview.</p>
             </div>
 
-            <p class="field-hint" id="kvColorHint" hidden>
-              Paying Seller templates (8.8, 9.9) use a fixed campaign background — KV has no effect on these templates.
-            </p>
+            <p class="field-hint" id="kvColorHint" hidden></p>
           </div>
 
           <div class="form-row output-row" id="outputRow">
@@ -419,7 +400,7 @@
       <section class="preview-stage" aria-label="Generated previews">
         <div class="stage-header">
           <div>
-            <p class="eyebrow" id="templateLabel">Mall BAU</p>
+            <p class="eyebrow" id="templateLabel">Design 1</p>
             <h1>Generated Outputs</h1>
           </div>
           <div class="stage-actions">
@@ -436,15 +417,18 @@
         <div class="preview-list" id="previewList"></div>
         <section class="preview-list blank-canvas-card" id="blankCanvasCard" hidden><div id="blankPreviewStack"></div></section>
       </section>
-      <aside class="review-panel" aria-label="Design reviewer">
+      <aside class="review-panel" aria-label="Design preview and reviewer">
         <h2>Design Reviewer</h2>
         <div class="review-box"><div class="review-suggestions" id="reviewStatus" aria-live="polite"><p>Upload or generate a banner, then analyse its rendered design for tailored suggestions.</p></div><button type="button" id="startReview">Analyse design</button></div>
-        <a href="assets/template-guides/banner-card.png" target="_blank" rel="noreferrer">Download Design Guideline Here</a>
+        <a href="#guidelines" id="bmOpenGuidelines">View design guidelines</a>
         <h2>Design Preview</h2>
         <section class="homepage-preview" id="homepagePreview" aria-label="Shopee homepage preview">
           <div class="homepage-preview-header">
             <span id="homepagePreviewLabel">Homepage preview</span>
-            <span class="homepage-preview-actions"><button type="button" class="homepage-expand" id="homepagePreviewDownload" aria-label="Download the visible phone preview">Download</button><button type="button" class="homepage-expand" id="homepagePreviewExpand" aria-label="Open larger homepage preview">Expand</button></span>
+            <div class="homepage-preview-controls" role="group" aria-label="Preview type">
+              <button type="button" id="homepagePreviewPrevious" aria-label="Show homepage preview" aria-pressed="true">Homepage</button>
+              <button type="button" id="homepagePreviewNext" aria-label="Show pop up banner preview" aria-pressed="false">Pop up</button>
+            </div>
           </div>
           <div class="iphone-frame">
             <div class="iphone-speaker" aria-hidden="true"></div>
@@ -466,10 +450,7 @@
             <canvas class="homepage-output homepage-output-canvas iphone-floating-output" data-home-canvas="floating-icon" aria-label="Floating Icon preview" hidden></canvas>
             <div class="iphone-floating-nav" aria-hidden="true"></div>
           </div>
-          <div class="homepage-preview-controls">
-            <button type="button" id="homepagePreviewPrevious" aria-label="Show homepage preview">Homepage</button>
-            <button type="button" id="homepagePreviewNext" aria-label="Show pop up banner preview">Pop up</button>
-          </div>
+          <div class="homepage-preview-actions"><button type="button" class="homepage-expand" id="homepagePreviewExpand" aria-label="Open larger homepage preview">Expand</button><button type="button" class="homepage-expand" id="homepagePreviewDownload" aria-label="Download the visible phone preview">Download PNG</button></div>
         </section>
         <div class="review-preview" id="reviewPreview" hidden>Preview will appear here</div>
       </aside>
@@ -533,10 +514,13 @@
       </div>
     </div>
 
-<script src="overlay-assets.js"></script>
-<script src="preview-assets.js"></script>
-<script src="preview-local-assets.js"></script>
-<script src="script.js"></script>
-    <script src="workflow.js"></script>
+    <script src="overlay-assets.js"></script>
+    <script src="preview-assets.js"></script>
+    <script src="preview-local-assets.js"></script>
+    <script src="export-local-assets.js"></script>
+    <script src="script.js?v=20261106-workspace-v9"></script>
+    <script src="workflow.js?v=20261106-workspace-v9"></script>
+    <script src="project-store.js?v=20261106-workspace-v9"></script>
+    <script src="home.js?v=20261106-workspace-v9"></script>
   </body>
 </html>

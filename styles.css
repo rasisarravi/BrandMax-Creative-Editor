@@ -1,50 +1,21 @@
 @font-face {
+  font-family: "ShopeeFont";
+  src: url("assets/fonts/shopee-font-black.ttf") format("truetype");
+  font-weight: 900;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
   font-family: "ShopeeFontBlack";
   src: url("assets/fonts/shopee-font-black.ttf") format("truetype");
   font-weight: 900;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 :root {
-  /* Dark theme is the default look. */
-  color-scheme: dark;
-  --page: #101214;
-  --surface: #1a1d22;
-  --surface-soft: #21252b;
-  --ink: #eef0f2;
-  --muted: #9199a3;
-  --line: #2f333b;
-  --shopee: #ee4d2d;
-  --shopee-dark: #ff6a45;
-  --kv: #ee4d2d;
-  --radius: 8px;
-  --panel-shadow: rgba(0, 0, 0, 0.45);
-  --field-bg: #23262c;
-  --label-color: #e7e9ec;
-  --toggle-label-color: #e7e9ec;
-  --upload-border: #3a3f47;
-  --upload-color: #d7dadf;
-  --upload-hover-bg: rgba(238, 77, 45, 0.14);
-  --toggle-track-bg: #3a3f47;
-  --toggle-knob-bg: #eef0f2;
-  --toggle-knob-shadow: rgba(0, 0, 0, 0.4);
-  --swatch-border: rgba(255, 255, 255, 0.16);
-  --picker-border: #3a3f47;
-  --color-dot-border: #4b515a;
-  --select-arrow-color: #9199a3;
-  --placeholder-color: #6b7078;
-  --output-selected-bg: rgba(238, 77, 45, 0.18);
-  --output-selected-shadow: rgba(238, 77, 45, 0.32);
-  --checker-color: #2a2e34;
-  --asset-shadow: rgba(0, 0, 0, 0.55);
-  --empty-border: #3a3f47;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
-}
-
-:root[data-theme="light"] {
+  /* Light is the default, including if no theme preference is available. */
   color-scheme: light;
   --page: #f6f7f8;
   --surface: #ffffff;
@@ -55,6 +26,7 @@
   --shopee: #ee4d2d;
   --shopee-dark: #cf3d22;
   --kv: #ee4d2d;
+  --radius: 8px;
   --panel-shadow: rgba(15, 23, 42, 0.08);
   --field-bg: #ffffff;
   --label-color: #2a2d31;
@@ -75,6 +47,42 @@
   --checker-color: #f4f6f8;
   --asset-shadow: rgba(15, 23, 42, 0.14);
   --empty-border: #c7ccd3;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #101214;
+  --surface: #1a1d22;
+  --surface-soft: #21252b;
+  --ink: #eef0f2;
+  --muted: #9199a3;
+  --line: #2f333b;
+  --shopee: #ee4d2d;
+  --shopee-dark: #ff6a45;
+  --kv: #ee4d2d;
+  --panel-shadow: rgba(0, 0, 0, 0.45);
+  --field-bg: #23262c;
+  --label-color: #e7e9ec;
+  --toggle-label-color: #e7e9ec;
+  --upload-border: #3a3f47;
+  --upload-color: #d7dadf;
+  --upload-hover-bg: rgba(238, 77, 45, 0.14);
+  --toggle-track-bg: #3a3f47;
+  --toggle-knob-bg: #eef0f2;
+  --toggle-knob-shadow: rgba(0, 0, 0, 0.4);
+  --swatch-border: rgba(255, 255, 255, 0.16);
+  --picker-border: #3a3f47;
+  --color-dot-border: #4b515a;
+  --select-arrow-color: #9199a3;
+  --placeholder-color: #6b7078;
+  --output-selected-bg: rgba(238, 77, 45, 0.18);
+  --output-selected-shadow: rgba(238, 77, 45, 0.32);
+  --checker-color: #2a2e34;
+  --asset-shadow: rgba(0, 0, 0, 0.55);
+  --empty-border: #3a3f47;
 }
 
 * {
@@ -570,8 +578,11 @@ button {
 .homepage-base { display:block; width:100%; height:100%; }
 .shopee-homepage::after { content:""; position:absolute; z-index:1; left:0; right:0; bottom:0; height:9%; background:#f4f4f4; pointer-events:none; }
 .homepage-output { position:absolute; z-index:2; display:block; object-fit:cover; }
-.homepage-skinny { left:0; top:28.23%; width:100%; height:12.71%; }
-.homepage-skinny-guide-mask { position:absolute; z-index:1; left:0; top:40.94%; width:100%; height:1.1%; background:#f3f3f3; }
+/* The guide's 1200×360 Skinny placeholder occupies source rows 814–1173.
+   Match that box exactly so no green strip survives below the banner. */
+.homepage-skinny { left:0; top:28.7227%; width:100%; height:12.7029%; }
+/* Hide the guide's antialiased green edge pixels (rows 814 and 1174), too. */
+.homepage-skinny-guide-mask { position:absolute; z-index:1; left:0; top:28.6521%; width:100%; height:12.8793%; background:#f1f1f1; }
 .homepage-card { left:2.1%; top:62.24%; width:47.1%; height:29.72%; border-radius:3%; }
 .homepage-floating { right:3.35%; top:74.9%; width:22.9%; aspect-ratio:1; object-fit:contain; }
 .iphone-floating-output { position:absolute !important; z-index:19; top:auto !important; right:3.35%; bottom:calc(16px + (100cqw * 270 / 1468)); width:22.9%; height:auto !important; aspect-ratio:1; object-fit:contain; pointer-events:none; }
@@ -586,7 +597,7 @@ button {
 .blank-canvas-card { max-width: 924px; min-height: 633px; margin: 0 auto; padding: 17px 24px 22px; border: 1px solid #ddd; border-radius: 10px; background: #fff; box-shadow: 5px 5px 5px rgba(0,0,0,.1); }
 .blank-canvas-heading { display:flex; justify-content:space-between; align-items:flex-start; }.blank-canvas-heading h1 { margin:0; font-size:21px; font-weight:500; color:#000; }.blank-canvas-heading p { margin:14px 0 0; font-size:14px; color:#7e7e7e; }.blank-canvas-heading span { padding:7px 10px; border-radius:20px; color:#ee4d2d; background:#fff0ec; font-size:12px; font-weight:700; }
 .blank-canvas-upload { height: 55px; margin-top: 30px; border:1px dashed #7e7e7e; border-radius:5px; display:grid; place-items:center; color:#7e7e7e; font-size:14px; cursor:pointer; }.blank-canvas-upload input { display:none; }.blank-canvas-card > img { display:block; width:100%; max-height:450px; object-fit:contain; margin-top:20px; background:repeating-conic-gradient(#eee 0 25%,#fff 0 50%) 50%/20px 20px; }
-.blank-mode .control-panel { opacity:.38; pointer-events:none; }.blank-mode #previewList { display:none; }
+.blank-mode #previewList { display:none; }
 @media (max-width: 1240px) { .app-shell { grid-template-columns: 360px minmax(590px,1fr) 340px; }.workflow-topbar { gap:18px; }.workflow-brand { width:245px; }.workflow-field { gap:8px; }.workflow-field select { width:120px; }.workflow-download { width:155px; } }
 
 .control-panel,
@@ -2121,3 +2132,61 @@ input[type="file"] {
 @media (max-width: 1150px) { .workflow-topbar { gap:14px; padding:0 18px; }.workflow-brand { width:230px; }.workflow-field select { width:110px; }.workflow-output-menu > button { width:132px; }.app-shell { grid-template-columns:320px minmax(500px,1fr) 250px; }.review-panel { padding:24px 16px; } }
 @media (max-width: 860px) { .workflow-topbar { height:auto; min-height:72px; flex-wrap:wrap; padding:12px 16px; row-gap:10px; }.workflow-brand { width:190px; }.workflow-divider { display:none; }.workflow-download { margin-left:0; }.app-shell { height:auto; min-height:0; grid-template-columns:300px minmax(420px,1fr); }.review-panel { grid-column:1/-1; border-left:0; border-top:1px solid #ddd; display:grid; grid-template-columns:1fr 1.25fr; gap:16px; align-items:start; }.review-panel h2:nth-of-type(2) { margin-top:0; }.review-box { min-height:180px; }.review-panel > a { margin:0; }.review-preview { grid-column:2; grid-row:1 / span 2; } }
 @media (max-width: 640px) { .workflow-topbar { align-items:flex-start; }.workflow-brand { height:27px; width:180px; }.workflow-field { width:calc(50% - 6px); display:grid; gap:4px; }.workflow-field select,.workflow-output-menu,.workflow-output-menu > button { width:100%; }.workflow-output-field { width:calc(50% - 6px); }.workflow-download { width:100%; }.app-shell { display:flex; flex-direction:column; }.control-panel,.preview-stage,.review-panel { width:100%; }.control-panel { max-height:none; overflow:visible; }.preview-stage { padding:20px 12px; overflow:visible; }.stage-header { padding:14px; }.stage-actions #downloadAllButton { min-width:110px; height:40px; }.preview-list { padding:12px; }.review-panel { display:block; padding:24px 16px; }.review-panel h2:nth-of-type(2) { margin-top:28px; }.blank-canvas-card { padding:14px; }.blank-design-frame { min-height:260px; }.blank-mall-tag { top:14px; left:14px; width:96px; } }
+.blank-mode .control-panel { padding:25px 16px; }
+.blank-mode .control-panel > :not(.input-stack) { display:none; }
+.blank-mode .input-stack > :not(:first-child) { display:none; }
+.blank-mode .app-shell { grid-template-columns:240px minmax(0,1fr) 300px; }
+@media (max-width: 860px) {
+  .blank-mode .app-shell { grid-template-columns:minmax(0,1fr); }
+  .blank-mode .review-panel { grid-column:auto; }
+}
+
+/* One discoverable template selector in the top bar; clear component groups
+   below it. Internal form controls remain mounted for project restoration. */
+#editorTemplateRow { display:none !important; }
+.input-stack { gap:15px; }
+.input-stack > .editor-section-start { margin-top:10px; padding-top:24px; border-top:1px solid var(--line); }
+.input-stack > .editor-section-start > label:first-child { font-size:15px; font-weight:800; color:var(--ink); }
+#brandLogoSection { margin-top:0; padding-top:0; border-top:0; }
+.editor-ksp-input { width:100%; min-height:76px; padding:11px 12px; border:1px solid var(--line); border-radius:8px; background:var(--field-bg); color:var(--ink); font:inherit; font-size:13px; line-height:1.45; resize:vertical; }
+.editor-ksp-input:focus-visible { outline:2px solid var(--shopee); outline-offset:1px; }
+.editor-range { display:grid; grid-template-columns:auto minmax(80px,1fr) auto; align-items:center; gap:12px; font-size:12px; font-weight:750; color:var(--muted); }
+.editor-range input { width:100%; accent-color:var(--shopee); }
+.editor-range output { min-width:38px; color:var(--ink); text-align:right; }
+#outputRow { display:none !important; }
+.workflow-field:has(#workflowCanvas) { gap:8px; }
+#workflowCanvas { width:154px; color:var(--ink); font-weight:750; }
+.workflow-brand { content:url("assets/branding/home/brandmax-dark.png"); width:220px; }
+:root[data-theme="light"] .workflow-brand { content:url("assets/branding/home/brandmax-light.png"); }
+.homepage-preview-header { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; margin:0 0 13px; }
+.homepage-preview-header > span { display:block; }
+.homepage-preview-controls { width:min(100%, 254px); box-sizing:border-box; justify-self:center; margin:0 auto; padding:3px; gap:3px; border:1px solid var(--line); border-radius:10px; background:var(--field-bg); }
+.homepage-preview-controls button { min-height:36px; border:0; background:transparent; color:var(--muted); }
+.homepage-preview-controls button.is-active { border-radius:7px; background:var(--shopee); color:#fff; }
+.homepage-preview-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:13px; }
+.homepage-preview-actions button { width:100%; min-height:40px; padding:0 8px; font-size:12px; }
+#homepagePreviewDownload { border-color:var(--shopee); background:var(--shopee); color:#fff; }
+#homepagePreviewDownload:hover { background:var(--shopee-dark); color:#fff; }
+.blank-mode .control-panel { display:none; }
+.blank-mode .app-shell { grid-template-columns:minmax(0,1fr) 330px; }
+@media (max-width:860px) { .blank-mode .app-shell { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:1100px) {
+  .workflow-topbar { gap:12px; padding:0 14px; }
+  .workflow-brand { width:152px; height:auto; }
+  .workflow-divider,.workflow-field:has(.workflow-single-value) { display:none; }
+  .workflow-download { width:126px; }
+}
+@media (max-width:700px) {
+  .workflow-topbar { height:auto; min-height:76px; flex-wrap:wrap; padding:10px 12px; }
+  .workflow-field > label { display:none; }
+  .workflow-download { width:auto; min-width:118px; margin-left:0; }
+  .app-shell { height:auto; min-height:calc(100vh - 76px); }
+}
+@media (max-width:640px) {
+  .blank-mall-tag { inset:0; top:0; left:0; width:100%; height:100%; }
+}
+:root[data-theme="light"] .review-box { background:#f6f7f9; border:1px solid #e1e5e9; color:#27303b; }
+:root[data-theme="light"] .review-suggestions { background:#fff; border:1px solid #e1e5e9; color:#4d5864; }
+:root[data-theme="light"] .review-box #startReview { color:#e64b2b; border-color:#efb3a7; }
+:root[data-theme="light"] .review-box #startReview:hover { background:#fff0eb; border-color:#e64b2b; }
+
