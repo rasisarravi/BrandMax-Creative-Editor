@@ -17,8 +17,15 @@
         }
       })();
     </script>
-    <link rel="stylesheet" href="styles.css?v=20261106-workspace-v9" />
-    <link rel="stylesheet" href="home.css?v=20261106-workspace-v9" />
+    <link rel="stylesheet" href="styles.css?v=20261109-canvas-v8" />
+    <link rel="stylesheet" href="canvas-guides.css?v=20261109-canvas-v7" />
+    <link rel="stylesheet" href="blank-image-crop.css?v=20261109-canvas-v6" />
+    <link rel="stylesheet" href="format-masks.css?v=20261109-canvas-v6" />
+    <link rel="stylesheet" href="canvas-zoom.css?v=20261109-interactions-v5" />
+    <link rel="stylesheet" href="home.css?v=20261107-blank-tools-v2" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Montserrat:wght@400;700&family=Open+Sans:wght@400;700&family=Poppins:wght@400;700&family=Roboto:wght@400;700&display=swap" />
   </head>
   <body>
     <button
@@ -121,8 +128,11 @@
             </div>
           </div>
 
+          <details class="editor-accordion editor-standard-section" id="brandLogoAccordion">
+            <summary>Brand Logo</summary>
+            <div class="editor-accordion-body">
           <div class="form-row editor-section-start" id="brandLogoSection">
-            <label for="brandLogoInput">Brand Logo</label>
+            <label for="brandLogoInput">Image upload</label>
             <div class="field-wrap">
               <input id="brandLogoInput" type="file" accept="image/*" />
               <label class="upload-box" for="brandLogoInput">
@@ -150,19 +160,28 @@
             </div>
             <p class="field-hint is-error" id="removeLogoBgError" hidden></p>
           </div>
+            </div>
+          </details>
 
+          <details class="editor-accordion editor-standard-section" id="shopeeMallAccordion">
+            <summary>Shopee Mall Tag</summary>
+            <div class="editor-accordion-body">
           <div class="form-row editor-section-start" id="inverseLogoRow">
-            <label for="shopeeLogoToggle">Shopee Mall tag</label>
+            <label for="shopeeLogoToggle">Tag appearance</label>
             <label class="toggle-row span-wide" for="shopeeLogoToggle">
               <input id="shopeeLogoToggle" type="checkbox" />
               <span class="toggle-track" aria-hidden="true"></span>
               <span>Use the inverse Shopee Mall tag</span>
             </label>
-            <p class="field-hint">The Shopee Mall tag stays on every banner.</p>
           </div>
+            </div>
+          </details>
 
+          <details class="editor-accordion editor-standard-section" id="skuImageAccordion">
+            <summary>SKU Image</summary>
+            <div class="editor-accordion-body">
           <div class="form-row two-field-row editor-section-start" id="skuImageSection">
-            <label for="skuImageInput" id="skuImageFieldLabel">SKU Image</label>
+            <label for="skuImageInput" id="skuImageFieldLabel">Image upload</label>
             <div class="field-wrap">
               <input id="skuImageInput" type="file" accept="image/*" />
               <label class="upload-box" for="skuImageInput">
@@ -254,7 +273,7 @@
           </div>
 
           <div class="form-row" id="skuBackgroundRow">
-            <label>SKU Background</label>
+            <label>Background scene</label>
             <div class="background-browser span-wide">
               <div class="background-browser-controls">
                 <input
@@ -281,7 +300,7 @@
           </div>
 
           <div class="form-row" id="skuBgColorRow">
-            <label for="skuBgColorInput">Background Color</label>
+            <label for="skuBgColorInput">Background colour</label>
             <div class="inline-color-control span-wide">
               <label class="native-color compact-color" for="skuBgColorInput">
                 <span class="color-dot" id="skuBgColorDot"></span>
@@ -295,15 +314,20 @@
             </div>
             <p class="field-hint" id="skuBgColorHint">Shown behind the product image when no scene is selected.</p>
           </div>
+            </div>
+          </details>
 
+          <details class="editor-accordion editor-standard-section" id="kspTextAccordion">
+            <summary>KSP Text</summary>
+            <div class="editor-accordion-body">
           <div class="form-row editor-section-start" id="kspHintRow">
-            <label for="kspTextInput">KSP text</label>
+            <label for="kspTextInput">Message</label>
             <textarea id="kspTextInput" class="editor-ksp-input span-wide" rows="3" spellcheck="false" aria-label="KSP text">EXCLUSIVE LAUNCH DISKON 25%</textarea>
             <p class="field-hint span-wide">You can also double-click the text on a banner.</p>
           </div>
 
           <div class="form-row" id="kspColorFieldRow">
-            <label for="kspColorInput">KSP Text Color</label>
+            <label for="kspColorInput">Text colour</label>
             <div class="inline-color-control span-wide">
               <label class="native-color compact-color" for="kspColorInput">
                 <span class="color-dot" id="kspColorDot"></span>
@@ -318,7 +342,7 @@
           </div>
 
           <div class="form-row color-row editor-section-start" id="kvColorRow">
-            <label for="hexInput">Message Background</label>
+            <label for="hexInput">Message background</label>
             <div class="kv-mode-toggle span-wide" id="kvModeToggle" role="group" aria-label="Message background mode">
               <button type="button" class="chip-button sm is-active" data-kv-mode="color">Color</button>
               <button type="button" class="chip-button sm" data-kv-mode="image">Image</button>
@@ -365,6 +389,22 @@
 
             <p class="field-hint" id="kvColorHint" hidden></p>
           </div>
+            </div>
+          </details>
+
+          <details class="editor-accordion editor-blank-section" id="designToolsAccordion" open>
+            <summary>Add Content</summary>
+            <div class="editor-accordion-body" id="blankDesignTools">
+              <label class="editor-tool-target-label" for="blankToolTarget">Canvas<select id="blankToolTarget"></select></label>
+              <div class="editor-tool-palette" role="toolbar" aria-label="Blank canvas tools">
+                <div class="editor-tool-group"><button type="button" data-blank-tool="select" class="is-active">↖ <span>Move / Select</span></button></div>
+                <div class="editor-tool-group"><button type="button" data-blank-tool="text">T <span>Text</span></button></div>
+                <details class="editor-shape-menu"><summary>□ <span>Shape</span><span>›</span></summary><div class="editor-tool-group editor-shape-popout"><button type="button" data-blank-tool="rectangle">▭ <span>Rectangle</span></button><button type="button" data-blank-tool="ellipse">◯ <span>Circle</span></button><button type="button" data-blank-tool="star">☆ <span>Star</span></button></div></details>
+                <div class="editor-tool-group"><button type="button" data-blank-tool="line">╱ <span>Line</span></button></div>
+                <div class="editor-tool-group"><label class="editor-tool-upload">▧ <span>Image upload</span><input id="blankToolImage" type="file" accept="image/png,image/jpeg" /></label></div>
+              </div>
+            </div>
+          </details>
 
           <div class="form-row output-row" id="outputRow">
             <label>Output</label>
@@ -417,7 +457,8 @@
         <div class="preview-list" id="previewList"></div>
         <section class="preview-list blank-canvas-card" id="blankCanvasCard" hidden><div id="blankPreviewStack"></div></section>
       </section>
-      <aside class="review-panel" aria-label="Design preview and reviewer">
+      <aside class="review-panel" aria-label="Properties and design preview">
+        <section class="blank-properties-panel" id="blankPropertiesPanel" aria-label="Canvas tool properties"><h2>Properties</h2><div class="editor-tool-properties" id="blankToolProperties"><p class="editor-tool-empty">Select an object to edit its appearance.</p></div></section>
         <h2>Design Reviewer</h2>
         <div class="review-box"><div class="review-suggestions" id="reviewStatus" aria-live="polite"><p>Upload or generate a banner, then analyse its rendered design for tailored suggestions.</p></div><button type="button" id="startReview">Analyse design</button></div>
         <a href="#guidelines" id="bmOpenGuidelines">View design guidelines</a>
@@ -450,7 +491,7 @@
             <canvas class="homepage-output homepage-output-canvas iphone-floating-output" data-home-canvas="floating-icon" aria-label="Floating Icon preview" hidden></canvas>
             <div class="iphone-floating-nav" aria-hidden="true"></div>
           </div>
-          <div class="homepage-preview-actions"><button type="button" class="homepage-expand" id="homepagePreviewExpand" aria-label="Open larger homepage preview">Expand</button><button type="button" class="homepage-expand" id="homepagePreviewDownload" aria-label="Download the visible phone preview">Download PNG</button></div>
+          <div class="homepage-preview-actions"><button type="button" class="homepage-expand" id="homepagePreviewExpand" aria-label="Open larger homepage preview">Preview</button><button type="button" class="homepage-expand" id="homepagePreviewDownload" aria-label="Download the visible phone preview">Download PNG</button></div>
         </section>
         <div class="review-preview" id="reviewPreview" hidden>Preview will appear here</div>
       </aside>
@@ -518,9 +559,13 @@
     <script src="preview-assets.js"></script>
     <script src="preview-local-assets.js"></script>
     <script src="export-local-assets.js"></script>
-    <script src="script.js?v=20261106-workspace-v9"></script>
-    <script src="workflow.js?v=20261106-workspace-v9"></script>
+    <script src="script.js?v=20261109-canvas-v7"></script>
+    <script src="canvas-zoom.js?v=20261109-interactions-v5"></script>
+    <script src="blank-image-crop.js?v=20261109-canvas-v6"></script>
+    <script src="workflow.js?v=20261109-canvas-v7"></script>
+    <script src="font-catalog.js?v=20261109-canvas-v8"></script>
+    <script src="blank-tools.js?v=20261109-canvas-v8"></script>
     <script src="project-store.js?v=20261106-workspace-v9"></script>
-    <script src="home.js?v=20261106-workspace-v9"></script>
+    <script src="home.js?v=20261109-blank-tools-v3"></script>
   </body>
 </html>

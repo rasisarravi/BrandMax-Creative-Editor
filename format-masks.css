@@ -1,0 +1,31 @@
+/* The editable artwork and the fixed campaign frame are separate layers.
+   These masks match the native export coordinates in workflow/blank-tools. */
+.blank-design-frame[data-blank-output="pop-up-banner"] .blank-custom-layer-stack {
+  clip-path: inset(4.1666667% 6.3793103% 5% 6.2068966% round 5.1724138% / 4.1666667%);
+}
+.blank-design-frame[data-blank-output="pop-up-banner"] .blank-popup-design-mask,
+.blank-design-frame[data-blank-output="pop-up-banner"] .blank-image-placeholder {
+  border-radius: 5.9171598% / 4.587156%;
+}
+.blank-design-frame[data-blank-output="floating-icon"] .blank-custom-layer-stack {
+  clip-path: circle(44.4444444% at 50% 52.7777778%);
+}
+.blank-design-frame[data-blank-output="floating-icon"] .blank-popup-design-mask {
+  border-radius: 50%;
+  clip-path: circle(50%);
+  overflow: hidden;
+}
+/* Mandatory assets stay above all user artwork, including when selected. */
+.blank-design-frame > .blank-mall-tag,
+.blank-design-frame > .blank-popup-tag,
+.blank-design-frame > .blank-popup-cta { z-index: 10; pointer-events: none; }
+.blank-design-frame > .blank-floating-logo { z-index: 11; }
+.blank-design-frame > .blank-selection-overlay { z-index: 9; }
+
+/* Remove the retired reviewer in every template; leave Properties/Preview. */
+.review-panel > h2:first-of-type,
+.review-panel > .review-box,
+.review-panel > #bmOpenGuidelines,
+.review-panel > #reviewPreview { display: none !important; }
+.review-panel > h2:nth-of-type(2) { margin-top: 0; }
+.blank-operation-status { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--field-bg); font-size: 13px; }

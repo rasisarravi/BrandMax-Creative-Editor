@@ -28,13 +28,14 @@
     moon: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>',
     duplicate: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
     rename: '<path d="M12 20h9M4 20l4.5-1 10-10a2 2 0 0 0-3-3l-10 10z"/>',
+    star: '<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/>',
   };
   const icon = (id) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[id]}</svg>`;
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
   const defaultEditorState = snapshotContext(state);
   const imageCache = new Map();
   const ui = { view: 'home', step: 1, template: 'Design 1', selected: new Set(['banner-card', 'pop-up-banner']), guideline: 'bau',
-    projectId: null, projectName: 'Untitled project', folderId: null, search: '', listView: false, saveTimer: null, saveChain: Promise.resolve() };
+    projectId: null, projectName: 'Untitled project', folderId: null, search: '', listView: false, saveTimer: null, saveChain: Promise.resolve(), dirty: false, hasSaved: false, changeVersion: 0 };
 
   const shell = document.createElement('div');
   shell.id = 'homeShell';
@@ -45,7 +46,7 @@
     <button type="button" data-view="trash">${icon('trash')}<span>Trash</span></button>
     <button type="button" data-view="help">${icon('help')}<span>Help</span></button></nav>
     <p class="bm-sidebar-note">Create once. Adapt for every placement.</p></aside>
-    <div class="bm-main-wrap"><header class="bm-site-header"><button type="button" class="bm-home-theme" aria-label="Switch to dark mode" title="Switch to dark mode"></button><img src="assets/branding/home/shopee-light.png" alt="Shopee" /></header><main class="bm-main" id="bmMain"></main><div class="bm-toast" id="bmToast" role="status" aria-live="polite" hidden></div></div>`;
+    <div class="bm-main-wrap"><header class="bm-site-header"><div class="bm-header-actions"><img src="assets/branding/home/shopee-light.png" alt="Shopee" /><button type="button" class="bm-home-theme" aria-label="Switch to dark mode" title="Switch to dark mode"></button></div></header><main class="bm-main" id="bmMain"></main><div class="bm-toast" id="bmToast" role="status" aria-live="polite" hidden></div></div>`;
   document.body.prepend(shell);
   const main = shell.querySelector('#bmMain');
   const toast = shell.querySelector('#bmToast');
@@ -55,7 +56,7 @@
     const brandmaxLogo = dark ? 'assets/branding/home/brandmax-dark.png' : 'assets/branding/home/brandmax-light.png';
     const shopeeLogo = dark ? 'assets/branding/home/shopee-dark.png' : 'assets/branding/home/shopee-light.png';
     shell.querySelector('.bm-logo-button img').src = window.BrandMaxResolveAsset?.(brandmaxLogo) || brandmaxLogo;
-    shell.querySelector('.bm-site-header img').src = window.BrandMaxResolveAsset?.(shopeeLogo) || shopeeLogo;
+    shell.querySelector('.bm-header-actions img').src = window.BrandMaxResolveAsset?.(shopeeLogo) || shopeeLogo;
     homeTheme.innerHTML = icon(dark ? 'moon' : 'sun');
     homeTheme.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} mode`);
     homeTheme.title = `Switch to ${dark ? 'light' : 'dark'} mode`;
@@ -71,9 +72,11 @@
   const modal = document.createElement('div');
   modal.className = 'bm-modal-backdrop'; modal.hidden = true; document.body.append(modal);
   const editorBar = document.querySelector('.workflow-topbar');
+  const editorThemeButton = document.querySelector('#themeToggle');
   const backButton = document.createElement('button');
   backButton.type = 'button'; backButton.className = 'bm-editor-back'; backButton.textContent = '← Projects';
-  editorBar.querySelector('.workflow-brand').after(backButton);
+  editorBar.querySelector('.workflow-brand').after(editorThemeButton);
+  editorThemeButton.after(backButton);
   const editorName = document.createElement('button');
   editorName.type = 'button'; editorName.className = 'bm-editor-name'; editorName.title = 'Rename project';
   const saveButton = document.createElement('button');
@@ -176,6 +179,8 @@
 
   function renderHome() {
     const first = ui.step === 1;
+    main.dataset.page = 'home';
+    main.scrollTop = 0;
     main.innerHTML = `<section class="bm-welcome"><p class="bm-eyebrow">Welcome to Shopee BrandMax Creative</p><h1>${first ? 'Choose your design template' : 'Choose your banner formats'}</h1><p class="bm-subtitle">${first ? 'Choose a layout for your campaign. You can change it in the editor.' : 'Select every placement you need. You can add formats later.'}</p><div class="bm-steps" aria-label="Creation steps"><span class="${first ? 'is-current' : 'is-done'}">1 · Template</span><span class="${first ? '' : 'is-current'}">2 · Formats</span></div></section>
     <section class="bm-selection-panel" aria-label="${first ? 'Design templates' : 'Banner formats'}">${first ? `<div class="bm-template-grid">${templates.map(item => `<button type="button" class="bm-template-card ${ui.template === item.id ? 'is-selected' : ''}" data-template="${item.id}" aria-pressed="${ui.template === item.id}"><span class="bm-template-visual ${item.id === 'Blank' ? 'is-blank' : ''}"><img src="${item.image}" alt="${item.name} layout preview" /></span><strong>${item.name}</strong><small>${item.description}</small><span class="bm-card-check" aria-hidden="true">✓</span></button>`).join('')}</div><div class="bm-selection-actions"><button type="button" class="bm-primary" data-action="next">Continue to formats <span aria-hidden="true">→</span></button></div>` : `<p class="bm-panel-intro">Each preview shows the full placement. The design adapts to the selected format.</p><div class="bm-format-grid">${formats.map(item => `<button type="button" class="bm-format-card ${ui.selected.has(item.id) ? 'is-selected' : ''}" data-format="${item.id}" aria-pressed="${ui.selected.has(item.id)}"><span class="bm-card-check" aria-hidden="true">✓</span><span class="bm-format-image"><img src="${item.image}" data-format-preview="${item.id}" alt="${item.name} ${ui.template} full preview" /></span><strong>${item.name}</strong><small>${item.size}</small></button>`).join('')}</div><div class="bm-selection-actions"><button type="button" class="bm-secondary" data-action="previous">← Change template</button><button type="button" class="bm-primary" data-action="start" ${ui.selected.size ? '' : 'disabled'}>Start designing <span aria-hidden="true">→</span></button></div>`}</section>`;
     if (first) renderTemplatePreviews();
@@ -242,11 +247,11 @@
   }
 
   function projectCard(project) {
-    return `<article class="bm-project-card"><button type="button" class="bm-project-image" data-action="open-project" data-id="${project.id}"><img src="${project.preview || templateImage(project.data?.template)}" alt="${escapeHtml(project.name)} preview" /></button><div class="bm-project-details"><div class="bm-project-info"><h2>${escapeHtml(project.name)}</h2><time>${dateLabel(project.updatedAt)}</time><p>${escapeHtml(projectSummary(project))}</p></div><div class="bm-project-actions"><div class="bm-project-quick"><button type="button" data-action="download-project" data-id="${project.id}">Download backup</button><button type="button" data-action="move-project" data-id="${project.id}" aria-label="Move ${escapeHtml(project.name)} to a folder">Move</button><button type="button" data-action="duplicate-project" data-id="${project.id}" aria-label="Duplicate ${escapeHtml(project.name)}">${icon('duplicate')}</button><button type="button" data-action="rename-project" data-id="${project.id}" aria-label="Rename ${escapeHtml(project.name)}">${icon('rename')}</button><button type="button" data-action="trash-project" data-id="${project.id}" aria-label="Move ${escapeHtml(project.name)} to Trash">${icon('trash')}</button></div><button type="button" class="bm-open-project" data-action="open-project" data-id="${project.id}">Open project</button></div></div></article>`;
+    return `<article class="bm-project-card" draggable="true" data-project-drag="${project.id}"><button type="button" class="bm-project-image" data-action="open-project" data-id="${project.id}"><img src="${project.preview || templateImage(project.data?.template)}" alt="${escapeHtml(project.name)} preview" draggable="false" /></button><div class="bm-project-details"><div class="bm-project-info"><h2><button type="button" class="bm-inline-name" data-rename-name="project" data-id="${project.id}" title="Click to rename project">${escapeHtml(project.name)}</button></h2><time>${dateLabel(project.updatedAt)}</time><p>${escapeHtml(projectSummary(project))}</p></div><div class="bm-project-actions"><div class="bm-project-quick"><button type="button" data-action="download-project" data-id="${project.id}">Download backup</button><button type="button" class="bm-favorite ${project.favorite ? 'is-favorite' : ''}" data-action="favorite-project" data-id="${project.id}" aria-label="${project.favorite ? 'Remove' : 'Add'} ${escapeHtml(project.name)} ${project.favorite ? 'from' : 'to'} Favorites" aria-pressed="${Boolean(project.favorite)}" title="${project.favorite ? 'Remove from' : 'Add to'} Favorites">${icon('star')}</button><button type="button" data-action="duplicate-project" data-id="${project.id}" aria-label="Duplicate ${escapeHtml(project.name)}">${icon('duplicate')}</button><button type="button" data-action="trash-project" data-id="${project.id}" aria-label="Move ${escapeHtml(project.name)} to Trash">${icon('trash')}</button></div><button type="button" class="bm-open-project" data-action="open-project" data-id="${project.id}">Open project</button></div></div></article>`;
   }
   function folderCard(folder, count) {
     const label = `${count} project${count === 1 ? '' : 's'}`;
-    return `<article class="bm-project-card bm-folder-project-card"><button type="button" class="bm-project-image bm-folder-cover" data-action="open-folder" data-id="${folder.id}" aria-label="Open ${escapeHtml(folder.name)} folder">${icon('guidelines')}<span>${label}</span></button><div class="bm-project-details"><div class="bm-project-info"><h2>${escapeHtml(folder.name)}</h2><time>Updated ${dateLabel(folder.updatedAt)}</time><p>${label} inside this folder</p></div><div class="bm-project-actions"><div class="bm-project-quick"><button type="button" data-action="rename-folder" data-id="${folder.id}">Rename folder</button><button type="button" data-action="delete-folder" data-id="${folder.id}" aria-label="Delete ${escapeHtml(folder.name)} folder">${icon('trash')}</button></div><button type="button" class="bm-open-project" data-action="open-folder" data-id="${folder.id}">Open folder</button></div></div></article>`;
+    return `<article class="bm-project-card bm-folder-project-card" data-folder-drop="${folder.id}"><button type="button" class="bm-project-image bm-folder-cover" data-action="open-folder" data-id="${folder.id}" aria-label="Open ${escapeHtml(folder.name)} folder">${icon('guidelines')}<span>${label}</span></button><div class="bm-project-details"><div class="bm-project-info"><h2><button type="button" class="bm-inline-name" data-rename-name="folder" data-id="${folder.id}" title="Click to rename folder">${escapeHtml(folder.name)}</button></h2><time>Updated ${dateLabel(folder.updatedAt)}</time><p>${label} inside this folder</p></div><div class="bm-project-actions"><div class="bm-project-quick"><button type="button" class="bm-favorite ${folder.favorite ? 'is-favorite' : ''}" data-action="favorite-folder" data-id="${folder.id}" aria-label="${folder.favorite ? 'Remove' : 'Add'} ${escapeHtml(folder.name)} ${folder.favorite ? 'from' : 'to'} Favorites" aria-pressed="${Boolean(folder.favorite)}" title="${folder.favorite ? 'Remove from' : 'Add to'} Favorites">${icon('star')}</button><button type="button" data-action="delete-folder" data-id="${folder.id}" aria-label="Delete ${escapeHtml(folder.name)} folder">${icon('trash')}</button></div><button type="button" class="bm-open-project" data-action="open-folder" data-id="${folder.id}">Open folder</button></div></div></article>`;
   }
   async function renderProjects() {
     const [projects, folders, usage] = await Promise.all([store.list(), store.listFolders(), store.usage().catch(() => ({}))]);
@@ -256,13 +261,15 @@
     const query = ui.search.trim().toLowerCase();
     const folderIds = new Set(folders.map(item => item.id));
     const shown = projects.filter(project => folder ? project.folderId === folder.id : !project.folderId || !folderIds.has(project.folderId))
-      .filter(project => !query || `${project.name} ${projectSummary(project)}`.toLowerCase().includes(query));
-    const shownFolders = folder ? [] : folders.filter(item => !query || item.name.toLowerCase().includes(query));
+      .filter(project => !query || `${project.name} ${projectSummary(project)}`.toLowerCase().includes(query))
+      .sort((a,b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || (b.updatedAt || 0) - (a.updatedAt || 0));
+    const shownFolders = folder ? [] : folders.filter(item => !query || item.name.toLowerCase().includes(query))
+      .sort((a,b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || a.name.localeCompare(b.name));
     const storage = usage.usage == null ? '' : ` Using ${(usage.usage / 1048576).toFixed(1)} MB of browser storage.`;
     main.innerHTML = `<section class="bm-library-header"><div><p class="bm-eyebrow">Your workspace</p><h1>${folder ? escapeHtml(folder.name) : 'Your Projects'}</h1><p>${folder ? 'Projects in this folder.' : 'Pick up where you left off, or start a new campaign.'}</p></div><div class="bm-library-actions">${folder ? '' : '<button type="button" class="bm-secondary" data-action="new-folder">+ New folder</button>'}<button type="button" class="bm-primary" data-action="new-project">+ New project</button></div></section>
       <div class="bm-library-tools"><label class="bm-search"><span aria-hidden="true">⌕</span><input id="bmSearch" type="search" placeholder="${folder ? 'Search this folder' : 'Search folders and projects'}" value="${escapeHtml(ui.search)}" aria-label="Search ${folder ? 'this folder' : 'folders and projects'}" /></label><div class="bm-view-toggle" role="group" aria-label="Project view"><button type="button" data-action="list-view" class="${ui.listView ? 'is-active' : ''}" aria-label="List view">☰</button><button type="button" data-action="grid-view" class="${ui.listView ? '' : 'is-active'}" aria-label="Grid view">▦</button></div></div>
-      <p class="bm-storage-note">Projects save automatically in this browser. Clearing site data can remove them. Download a project backup to keep a copy.${storage}</p>
-      ${folder ? `<div class="bm-breadcrumb"><button type="button" data-action="all-projects">All projects</button><span aria-hidden="true">›</span><strong>${escapeHtml(folder.name)}</strong><button type="button" data-action="rename-folder" data-id="${folder.id}">Rename folder</button><button type="button" data-action="delete-folder" data-id="${folder.id}">Delete folder</button></div>` : ''}
+      <p class="bm-storage-note">Drag a project onto a folder card to move it. Projects save here after your first edit; clearing site data can remove them. Download a backup to keep a copy.${storage}</p>
+      ${folder ? `<div class="bm-breadcrumb"><button type="button" data-action="all-projects" data-folder-drop="">All projects</button><span aria-hidden="true">›</span><button type="button" class="bm-inline-name" data-rename-name="folder" data-id="${folder.id}" title="Click to rename folder">${escapeHtml(folder.name)}</button><button type="button" data-action="delete-folder" data-id="${folder.id}">Delete folder</button></div>` : ''}
       <div class="bm-project-grid ${ui.listView ? 'is-list' : ''}">${shownFolders.map(item => folderCard(item, projects.filter(project => project.folderId === item.id).length)).join('')}${shown.map(projectCard).join('')}</div>${shown.length || shownFolders.length ? '' : `<div class="bm-empty"><h2>${query ? 'No matching items' : folder ? 'This folder is empty' : 'No projects yet'}</h2><p>${query ? 'Try a different search.' : folder ? 'Create a project here, or move an existing project into this folder.' : 'Choose a template on Home to create your first project.'}</p><button type="button" class="bm-primary" data-action="new-project">Create a project</button></div>`}
       <input type="file" id="bmImportFile" accept=".json,application/json" hidden /><button type="button" class="bm-import-button" data-action="import-project">Import a project backup</button>`;
     // Earlier versions stored 180 px JPEGs. Rebuild their full-resolution
@@ -307,15 +314,16 @@
         <article><span>01 · START</span><h2>Choose your layout</h2><p>Pick Design 1–3 or Blank canvas, then select every banner format you need. You can change the template or add formats from the editor later.</p></article>
         <article><span>02 · ADD CONTENT</span><h2>Upload once, adapt everywhere</h2><p>Add your brand logo and SKU image in the left panel, then write a short key selling point (KSP). The same SKU image is used across all selected formats.</p></article>
         <article><span>03 · FINE-TUNE</span><h2>Check each placement</h2><p>Use the Logo, KSP, and SKU controls above a banner to adjust its layout and zoom. Logo size applies to every format; the banner previews show exactly what will download.</p></article>
-        <article><span>04 · BLANK CANVAS</span><h2>Bring a finished design</h2><p>Upload artwork for each selected placement. BrandMax keeps mandatory Shopee Mall elements fixed above your design. The Design Reviewer is available for Blank canvas projects.</p></article>
+        <article><span>04 · BLANK CANVAS</span><h2>Upload or build your design</h2><p>Upload artwork for each placement, or add shapes, text, lines, and images. Drag to select several objects, double-click text to edit, and right-click an object to change its layer order. Copy objects between banner formats from the Design Tools panel. The fixed Shopee Mall elements stay on top.</p></article>
         <article><span>05 · PREVIEW &amp; EXPORT</span><h2>See it in context</h2><p>Switch between Homepage and Pop-up preview where available. Scroll inside the phone to choose the visible area, then download its PNG. Download one banner from its card or use Download All.</p></article>
-        <article><span>06 · SAVE &amp; ORGANISE</span><h2>Keep a backup</h2><p>Projects save automatically in this browser. Use folders to organise them, duplicate a project to explore a new idea, or restore one from Trash. Download a backup before clearing browser data.</p></article>
+        <article><span>06 · SAVE &amp; ORGANISE</span><h2>Keep a backup</h2><p>Projects save in this browser after your first edit. Use folders to organise them, duplicate a project to explore a new idea, or restore one from Trash. Download a backup before clearing browser data.</p></article>
       </div>
       <section class="bm-help-callout"><h2>Tips for cleaner banners</h2><ul><li>Use a high-resolution PNG with a transparent background for the brand logo or product cutout.</li><li>Keep the KSP concise and readable; check it at phone size, especially on the Skinny Banner.</li><li>Leave space around the fixed Shopee Mall tag and the Pop-up call-to-action. Avoid placing important details at the artwork edges.</li><li>Open the BAU or Campaign PDF under Design Guidelines for placement rules and examples.</li></ul></section>
-      <section class="bm-help-faq" aria-label="Common questions"><h2>Common questions</h2><details><summary>Why does my artwork look different across formats?</summary><p>Each placement has its own aspect ratio. Review every selected banner and adjust its controls before downloading.</p></details><details><summary>Will my projects appear on another computer?</summary><p>No. Projects are stored in this browser, not in an account. Download a project backup and import it on another device.</p></details><details><summary>Why is Download unavailable?</summary><p>A Blank canvas placement needs an uploaded design before it can be downloaded. Check that the format is selected and its preview has finished rendering.</p></details></section>`;
+      <section class="bm-help-faq" aria-label="Common questions"><h2>Common questions</h2><details><summary>Why does my artwork look different across formats?</summary><p>Each placement has its own aspect ratio. Review every selected banner and adjust its controls before downloading.</p></details><details><summary>Will my projects appear on another computer?</summary><p>No. Projects are stored in this browser, not in an account. Download a project backup and import it on another device.</p></details><details><summary>Why is Download unavailable?</summary><p>A Blank canvas placement needs uploaded artwork or a design-tool element before downloading. Check that the format is selected and its preview has finished rendering.</p></details></section>`;
   }
   async function renderView() {
     shell.querySelectorAll('.bm-nav button').forEach(button => { const active = button.dataset.view === ui.view; button.classList.toggle('is-active', active); button.setAttribute('aria-current', active ? 'page' : 'false'); });
+    main.dataset.page = ui.view;
     main.setAttribute('aria-busy', 'true');
     if (ui.view === 'home') renderHome();
     if (ui.view === 'projects') await renderProjects();
@@ -325,8 +333,8 @@
     main.setAttribute('aria-busy', 'false');
   }
   async function navigate(view) {
-    if (ui.view === 'editor') { clearTimeout(ui.saveTimer); try { await saveCurrent(); } catch (error) { notify(`Could not save this project: ${error.message}`, true); return; } }
-    ui.view = view; document.documentElement.classList.add('home-active'); shell.hidden = false; syncHomeTheme(); window.scrollTo(0, 0); await renderView();
+    if (ui.view === 'editor') { clearTimeout(ui.saveTimer); if (ui.dirty) { try { await saveCurrent({ silent: true }); } catch (error) { notify(`Could not save this project: ${error.message}`, true); return; } } }
+    ui.view = view; document.documentElement.classList.add('home-active'); shell.hidden = false; syncHomeTheme(); window.scrollTo(0, 0); main.scrollTop = 0; await renderView();
   }
 
   function blobToDataUrl(blob) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error || new Error('Image could not be read.')); reader.readAsDataURL(blob); }); }
@@ -347,6 +355,12 @@
   }
   async function projectPreviewCanvas(mode, blank, selected, context) {
     const uploads = blank.uploads || [];
+    if (mode === 'blank') {
+      const toolLayers = blank.tools?.layers || [];
+      const editedId = selected.find(id => uploads.some(entry => entry[0] === id) || toolLayers.some(entry => entry[0] === id && entry[1]?.length));
+      const rendered = await window.BrandMaxBlankState?.renderCanvas(editedId || selected[0] || 'banner-card');
+      if (rendered) return rendered;
+    }
     const chosenUpload = selected.map(id => uploads.find(entry => entry[0] === id && entry[1] instanceof Blob))
       .find(Boolean) || uploads.find(entry => entry[1] instanceof Blob);
     const outputId = mode === 'blank' && chosenUpload ? chosenUpload[0] : selected[0] || 'banner-card';
@@ -399,7 +413,9 @@
   }
   async function saveCurrent(options = {}) {
     if (!ui.projectId) return;
+    if (!ui.dirty && !options.force) return;
     const id = ui.projectId, name = ui.projectName, folderId = ui.folderId;
+    const savedVersion = ui.changeVersion;
     const context = snapshotContext(state);
     const mode = document.querySelector('#workflowCanvas').value === 'blank' ? 'blank' : 'standard';
     const selected = [...document.querySelectorAll('#workflowOutputMenu input:checked')].map(input => input.value);
@@ -409,13 +425,22 @@
       const preview = await thumbnail(context.template, mode, blank, selected, context);
       const data = { template: mode === 'blank' ? 'Blank' : context.template, mode, selectedOutputs: selected, standard: await persistable(context), blank };
       const record = await store.save({ id, name, data, folderId, preview });
-      if (ui.projectId === id) { saveButton.textContent = 'Saved'; if (!options.silent) notify('Project saved.'); }
+      if (ui.projectId === id) {
+        ui.hasSaved = true;
+        if (ui.changeVersion === savedVersion) ui.dirty = false;
+        saveButton.textContent = ui.dirty ? 'Unsaved changes' : 'Saved';
+        if (!options.silent) notify('Project saved.');
+      }
       return record;
     });
     return ui.saveChain;
   }
-  function scheduleSave() {
+  function scheduleSave(event) {
     if (ui.view !== 'editor' || !ui.projectId) return;
+    // Browsing an asset library or choosing which canvas to edit is not a
+    // design change, so it must not create an otherwise untouched project.
+    if (event?.target?.closest?.('#bgSearchInput, #bgCollectionSelect, #blankToolTarget, #blankToolImage')) return;
+    ui.dirty = true; ui.changeVersion += 1;
     saveButton.textContent = 'Unsaved changes'; clearTimeout(ui.saveTimer);
     ui.saveTimer = setTimeout(() => saveCurrent({ silent: true }).catch(error => { saveButton.textContent = 'Save failed'; notify(`Project could not be saved: ${error.message}`, true); }), 1200);
   }
@@ -425,7 +450,8 @@
   }
   function showEditor() {
     ui.view = 'editor'; shell.hidden = true; document.documentElement.classList.remove('home-active');
-    editorName.textContent = ui.projectName; saveButton.textContent = 'Saved'; window.scrollTo(0,0);
+    document.querySelectorAll('.editor-accordion').forEach(section => { section.open = section.id === 'designToolsAccordion' && document.documentElement.classList.contains('blank-mode'); });
+    editorName.textContent = ui.projectName; saveButton.textContent = ui.hasSaved ? 'Saved' : 'Save project'; window.scrollTo(0,0);
     requestAnimationFrame(() => { renderPreviews(); window.BrandMaxHomepagePreview?.refresh(); });
   }
   async function startProject() {
@@ -446,7 +472,8 @@
     const mode = document.querySelector('#workflowCanvas'); mode.value = ui.template === 'Blank' ? 'blank' : ui.template; mode.dispatchEvent(new Event('change', { bubbles: true }));
     setSelectedOutputs([...ui.selected]);
     ui.projectId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`; ui.projectName = 'Untitled project';
-    showEditor(); try { await saveCurrent({ silent: true }); } catch (error) { notify(`Project could not be saved: ${error.message}`, true); }
+    ui.dirty = false; ui.hasSaved = false; ui.changeVersion = 0;
+    showEditor();
   }
   async function openProject(id) {
     const record = await store.get(id); if (!record || record.deletedAt) throw new Error('Project not found.');
@@ -457,12 +484,13 @@
     const canvas = document.querySelector('#workflowCanvas'); canvas.value = mode; canvas.dispatchEvent(new Event('change', { bubbles: true }));
     syncEditorFieldsFromContext();
     setSelectedOutputs(record.data?.selectedOutputs || [...state.outputs]); window.BrandMaxBlankState?.restore(record.data?.blank || {});
-    ui.projectId = record.id; ui.projectName = record.name; ui.folderId = record.folderId || null; showEditor();
+    ui.projectId = record.id; ui.projectName = record.name; ui.folderId = record.folderId || null;
+    ui.dirty = false; ui.hasSaved = true; ui.changeVersion = 0; showEditor();
   }
   async function renameCurrentProject() {
     if (!ui.projectId) return;
     const name = await askUser({ title:'Rename project', value:ui.projectName, action:'Rename' }); if (!name) return;
-    ui.projectName = name; editorName.textContent = name; await saveCurrent();
+    ui.projectName = name; editorName.textContent = name; await saveCurrent({ force: true });
   }
   async function downloadBackup(id) {
     const record = await store.get(id); if (!record) throw new Error('Project not found.');
@@ -470,6 +498,7 @@
     if (data.blank) {
       data.blank.uploads = await Promise.all((data.blank.uploads || []).map(async ([key,file]) => [key,{name:file.name || 'design.png',type:file.type,dataUrl:await blobToDataUrl(file)}]));
       if (data.blank.logoFile) { const file=data.blank.logoFile; data.blank.logoFile={name:file.name || 'logo.png',type:file.type,dataUrl:await blobToDataUrl(file)}; }
+      if (data.blank.tools?.layers) data.blank.tools.layers = await Promise.all(data.blank.tools.layers.map(async ([id,layers]) => [id, await Promise.all(layers.map(async layer => layer.file instanceof Blob ? {...layer,file:{name:layer.file.name || 'layer.png',type:layer.file.type,dataUrl:await blobToDataUrl(layer.file)}} : layer))]));
     }
     if (data.standard?.outputs instanceof Set) data.standard.outputs = [...data.standard.outputs];
     const backup = { kind:'brandmax-creative-project',version:1,name:record.name,preview:record.preview,data };
@@ -485,12 +514,75 @@
     if (data.blank) {
       data.blank.uploads = await Promise.all((data.blank.uploads || []).map(async ([key,upload]) => [key,new File([await (await fetch(upload.dataUrl)).blob()],upload.name || 'design.png',{type:upload.type || 'image/png'})]));
       if (data.blank.logoFile) { const upload=data.blank.logoFile; data.blank.logoFile=new File([await (await fetch(upload.dataUrl)).blob()],upload.name || 'logo.png',{type:upload.type || 'image/png'}); }
+      if (data.blank.tools?.layers) data.blank.tools.layers = await Promise.all(data.blank.tools.layers.map(async ([id,layers]) => [id, await Promise.all(layers.map(async layer => layer.file?.dataUrl ? {...layer,file:new File([await (await fetch(layer.file.dataUrl)).blob()],layer.file.name || 'layer.png',{type:layer.file.type || 'image/png'})} : layer))]));
     }
     const safePreview = typeof backup.preview === 'string' && /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/=]+$/i.test(backup.preview) ? backup.preview : templateImage(data.template);
     await store.save({ name:backup.name || 'Imported project',data,folderId:ui.folderId,preview:safePreview }); notify('Project imported.'); renderProjects();
   }
 
+  function beginInlineRename(button) {
+    const oldName = button.textContent.trim();
+    const input = document.createElement('input');
+    input.type = 'text'; input.className = 'bm-inline-name-input'; input.maxLength = 100;
+    input.value = oldName; input.setAttribute('aria-label', `Rename ${button.dataset.renameName}`);
+    button.replaceWith(input); input.focus(); input.select();
+    let cancelled = false;
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter') { event.preventDefault(); input.blur(); }
+      if (event.key === 'Escape') { cancelled = true; input.blur(); }
+    });
+    input.addEventListener('blur', async () => {
+      const name = input.value.trim();
+      if (cancelled || !name || name === oldName) { input.replaceWith(button); return; }
+      try {
+        if (button.dataset.renameName === 'folder') await store.renameFolder(button.dataset.id, name);
+        else await store.rename(button.dataset.id, name);
+        await renderProjects();
+      } catch (error) { input.replaceWith(button); notify(`Could not rename: ${error.message}`, true); }
+    }, { once: true });
+  }
+
+  let draggedProjectId = null;
+  function clearDropTargets() {
+    shell.querySelectorAll('.is-drop-target, .is-dragging').forEach(element => element.classList.remove('is-drop-target', 'is-dragging'));
+  }
+  shell.addEventListener('dragstart', event => {
+    const card = event.target.closest('[data-project-drag]');
+    if (!card || ui.view !== 'projects') return;
+    draggedProjectId = card.dataset.projectDrag;
+    card.classList.add('is-dragging');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', draggedProjectId);
+  });
+  shell.addEventListener('dragover', event => {
+    const target = event.target.closest('[data-folder-drop]');
+    if (!draggedProjectId || !target || ui.view !== 'projects') return;
+    event.preventDefault(); event.dataTransfer.dropEffect = 'move';
+    shell.querySelectorAll('.is-drop-target').forEach(element => { if (element !== target) element.classList.remove('is-drop-target'); });
+    target.classList.add('is-drop-target');
+  });
+  shell.addEventListener('drop', async event => {
+    const target = event.target.closest('[data-folder-drop]');
+    if (!draggedProjectId || !target) return;
+    event.preventDefault();
+    const id = draggedProjectId, destination = target.dataset.folderDrop || null;
+    draggedProjectId = null; clearDropTargets();
+    try {
+      const project = await store.get(id);
+      if (!project || project.deletedAt) throw new Error('Project is no longer available.');
+      if (destination && !(await store.listFolders()).some(folder => folder.id === destination)) throw new Error('Folder is no longer available.');
+      if ((project.folderId || null) !== destination) {
+        await store.moveToFolder(id, destination);
+        notify(destination ? 'Project moved to folder.' : 'Project moved to All projects.');
+        await renderProjects();
+      }
+    } catch (error) { notify(`Could not move project: ${error.message}`, true); }
+  });
+  shell.addEventListener('dragend', () => { draggedProjectId = null; clearDropTargets(); });
+
   shell.addEventListener('click', async event => {
+    const nameButton = event.target.closest('[data-rename-name]');
+    if (nameButton) { beginInlineRename(nameButton); return; }
     const view = event.target.closest('[data-view]');
     if (view) { if (view.dataset.view === 'home') { ui.folderId=null; ui.step=1; } if (view.dataset.view === 'projects') { ui.folderId=null; ui.search=''; } navigate(view.dataset.view).catch(error=>notify(error.message,true)); return; }
     const choice = event.target.closest('[data-template]'); if (choice) { ui.template=choice.dataset.template; renderHome(); return; }
@@ -506,19 +598,12 @@
       else if (action==='new-folder') { const name=await askUser({title:'Create folder',value:'',action:'Create folder'}); if(name){await store.createFolder(name);renderProjects();} }
       else if (action==='open-folder') { ui.folderId=id; ui.search=''; renderProjects(); }
       else if (action==='all-projects') { ui.folderId=null; renderProjects(); }
-      else if (action==='rename-folder') { const folder=(await store.listFolders()).find(item=>item.id===id); if(folder){const name=await askUser({title:'Rename folder',value:folder.name,action:'Rename'});if(name){await store.renameFolder(id,name);renderProjects();}} }
-      else if (action==='delete-folder') { if(await askUser({title:'Delete folder?',message:'Its projects will move to All projects.',action:'Delete folder',danger:true})){await store.deleteFolder(id);ui.folderId=null;renderProjects();} }
+      else if (action==='delete-folder') { const target=(await store.listFolders()).find(item=>item.id===id); if(target && await askUser({title:`Delete “${target.name}”?`,message:'Projects inside this folder will move to All projects. The folder itself will be deleted.',action:'Delete folder',danger:true})){await store.deleteFolder(id);ui.folderId=null;renderProjects();} }
       else if (action==='open-project') await openProject(id);
-      else if (action==='move-project') {
-        const project = await store.get(id);
-        if (!project) throw new Error('Project not found.');
-        const folders = await store.listFolders();
-        const destination = await askUser({ title: 'Move project', message: `Choose where to keep “${project.name}”.`, choices: [{ value: '', label: 'All projects' }, ...folders.map(item => ({ value: item.id, label: item.name }))], selectedValue: project.folderId || '', action: 'Move project' });
-        if (destination !== null && destination !== (project.folderId || '')) { await store.moveToFolder(id, destination || null); notify('Project moved.'); renderProjects(); }
-      }
+      else if (action==='favorite-folder') { const target=(await store.listFolders()).find(item=>item.id===id); if(target){await store.setFolderFavorite(id,!target.favorite);renderProjects();} }
+      else if (action==='favorite-project') { const target=await store.get(id); if(target){await store.setFavorite(id,!target.favorite);renderProjects();} }
       else if (action==='duplicate-project') { await store.duplicate(id); notify('Project duplicated.'); renderProjects(); }
-      else if (action==='rename-project') { const project=await store.get(id);const name=await askUser({title:'Rename project',value:project?.name || '',action:'Rename'});if(name){await store.rename(id,name);renderProjects();} }
-      else if (action==='trash-project') { await store.trash(id);notify('Project moved to Trash.');renderProjects(); }
+      else if (action==='trash-project') { const target=await store.get(id); if(target && await askUser({title:`Move “${target.name}” to Trash?`,message:'You can restore this project from Trash later.',action:'Move to Trash',danger:true})){await store.trash(id);notify('Project moved to Trash.');renderProjects();} }
       else if (action==='restore-project') { await store.restore(id);notify('Project restored.');renderTrash(); }
       else if (action==='delete-project') { if(await askUser({title:'Permanently delete project?',message:'This removes the project and artwork. It cannot be undone.',action:'Delete permanently',danger:true})){await store.permanentDeleteTrashed([id]);renderTrash();} }
       else if (action==='delete-all-trash') {
@@ -548,10 +633,10 @@
   backButton.addEventListener('click',()=>navigate('projects'));
   document.querySelector('#bmOpenGuidelines')?.addEventListener('click', event => { event.preventDefault();navigate('guidelines').catch(error=>notify(error.message,true)); });
   editorName.addEventListener('click',()=>renameCurrentProject().catch(error=>notify(error.message,true)));
-  saveButton.addEventListener('click',()=>saveCurrent().catch(error=>notify(error.message,true)));
+  saveButton.addEventListener('click',()=>saveCurrent({ force: true }).catch(error=>notify(error.message,true)));
   document.querySelector('.app-shell').addEventListener('input',scheduleSave,true);
   document.querySelector('.app-shell').addEventListener('change',scheduleSave,true);
-  document.querySelector('.app-shell').addEventListener('pointerup',scheduleSave,true);
+  document.addEventListener('brandmax:edited', scheduleSave);
   editorBar.addEventListener('change',scheduleSave,true);
   renderView().catch(error=>notify(`Could not open the workspace: ${error.message}`,true));
 })();

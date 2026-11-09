@@ -119,6 +119,7 @@
     return save({ ...original, id: makeId(), name: `${original.name} (copy)`, createdAt: undefined, updatedAt: undefined, deletedAt: null });
   }
   const rename = (id, name) => changeProject(id, () => ({ name: nameFor(name, 'Untitled project') }));
+  const setFavorite = (id, favorite) => changeProject(id, () => ({ favorite: Boolean(favorite) }));
   const moveToFolder = (id, folderId) => changeProject(id, () => ({ folderId: folderId ?? null }));
   const trash = (id) => changeProject(id, () => ({ deletedAt: Date.now() }));
   const restore = (id) => changeProject(id, () => ({ deletedAt: null }));
@@ -161,6 +162,18 @@
       };
     });
   }
+  function setFolderFavorite(id, favorite) {
+    return transact(['folders'], 'readwrite', (tx, setResult) => {
+      const folders = tx.objectStore('folders');
+      folders.get(id).onsuccess = (event) => {
+        const current = event.target.result;
+        if (!current) { tx.abort(); return; }
+        const updated = { ...current, favorite: Boolean(favorite), updatedAt: Date.now() };
+        folders.put(updated);
+        setResult(updated);
+      };
+    });
+  }
   function deleteFolder(id) {
     return transact(['folders', 'projects'], 'readwrite', (tx) => {
       const folders = tx.objectStore('folders');
@@ -179,6 +192,6 @@
     const estimate = await navigator.storage.estimate();
     return { usage: estimate.usage ?? null, quota: estimate.quota ?? null };
   }
-  window.BrandMaxProjectStore = Object.freeze({ list, get, save, upgradePreview, duplicate, rename, moveToFolder, trash, restore, permanentDelete, permanentDeleteTrashed,
-    listFolders, createFolder, renameFolder, deleteFolder, usage });
+  window.BrandMaxProjectStore = Object.freeze({ list, get, save, upgradePreview, duplicate, rename, setFavorite, moveToFolder, trash, restore, permanentDelete, permanentDeleteTrashed,
+    listFolders, createFolder, renameFolder, setFolderFavorite, deleteFolder, usage });
 })();

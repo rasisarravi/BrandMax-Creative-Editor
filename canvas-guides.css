@@ -1,0 +1,58 @@
+/* Non-exported editor controls and the Banner Card carousel safe-area guide. */
+.blank-design-upload-actions {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-right: auto;
+}
+.blank-remove-design {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--field-bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.blank-remove-design:hover {
+  color: #c12e21;
+  border-color: #c12e21;
+}
+.blank-remove-design:focus-visible {
+  outline: 2px solid var(--shopee);
+  outline-offset: 2px;
+}
+.banner-card-safe-area {
+  position: absolute;
+  z-index: 8;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 8.8383838384%; /* 70 / 792 native pixels */
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 5px 6px;
+  border-top: 1px dashed rgba(171, 102, 0, .85);
+  background: repeating-linear-gradient(135deg, rgba(255, 184, 61, .13) 0 7px, rgba(255, 184, 61, .23) 7px 8px);
+  pointer-events: none;
+  user-select: none;
+}
+.banner-card-safe-area span {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(255, 248, 230, .94);
+  color: #755018;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: center;
+}
+.banner-card-safe-area-standard { right: auto; bottom: auto; }
