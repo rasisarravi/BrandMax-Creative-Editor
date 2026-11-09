@@ -16,6 +16,11 @@
   const reviewerGuidelines = document.querySelector('#bmOpenGuidelines');
   const reviewButton = document.querySelector('#startReview');
   const exactMallOverlays = window.BrandMaxMallOverlays || {};
+  // Reviewer is no longer an editor feature. Retain the old nodes only as
+  // inert compatibility anchors for older project files and integrations.
+  [reviewerHeading, reviewerBox, reviewerGuidelines, reviewPreview].forEach(node => { if (node) node.hidden = true; });
+  if (reviewButton) reviewButton.disabled = true;
+  document.querySelector('.review-panel')?.setAttribute('aria-label', 'Canvas properties and design preview');
 
   const outputs = {
     'banner-card': { title: 'Banner Card', meta: '531 x 792px', width: '375px', ratio: '531 / 792', canvasWidth: 531, canvasHeight: 792, overlay: exactMallOverlays['banner-card'] || 'Template/Shopee%20Mall%20tag%20Overlay/Mall%20BAU%20Template_Mall_BAU_26-29mei_Banner%20Card_01%20copy.png' },
@@ -25,15 +30,26 @@
   };
   const blankUploads = new Map();
   const blankEdits = new Map();
+  const imageLayoutCallbacks = new WeakMap();
+  const imageLayoutObserver = new ResizeObserver(entries => entries.forEach(({target}) => imageLayoutCallbacks.get(target)?.()));
   const canvasOverlayCache = new Map();
   let reviewedOutputId = null;
   let reviewGeneration = 0;
   let floatingBlankLogoRatio = 'horizontal';
   let floatingBlankLogo = null;
   let floatingBlankLogoScale = 100;
+  const blankHistory = { past: [], future: [], current: null, restoring: false };
+  const blobHistoryIds = new WeakMap();
+  let nextBlobHistoryId = 0;
   const selectedOutputs = () => outputChecks.filter((input) => input.checked).map((input) => input.value);
   const editFor = (id) => blankEdits.get(id) || { scale: 0, x: 0, y: 0 };
   const setEdit = (id, edit) => blankEdits.set(id, edit);
+  const cropFor = (edit) => {
+    const crop = edit?.crop || {};
+    const x = Math.max(0, Math.min(.99, Number(crop.x) || 0));
+    const y = Math.max(0, Math.min(.99, Number(crop.y) || 0));
+    return { x, y, w: Math.max(.01, Math.min(1 - x, Number(crop.w) || 1)), h: Math.max(.01, Math.min(1 - y, Number(crop.h) || 1)) };
+  };
   const loadImage = (src) => new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = src; });
   const roundedRectPath = (context, x, y, width, height, radius) => {
     const r = Math.min(radius, width / 2, height / 2);
@@ -70,13 +86,19 @@
   }
 
   function showReview(message) {
-    reviewStatus.innerHTML = `<p>${message}</p>`;
+    // Export errors remain visible even though the reviewer was removed.
+    let status = blankCard.querySelector('.blank-operation-status');
+    if (!status) {
+      status = document.createElement('p'); status.className = 'blank-operation-status';
+      status.setAttribute('role', 'status'); blankCard.prepend(status);
+    }
+    status.textContent = message;
   }
 
   function createBlankArtworkCanvas(id, includeOverlay = true) {
     const upload = blankUploads.get(id);
     const item = outputs[id];
-    if (!upload || !item) return Promise.resolve(null);
+    if (!item || (!upload && !window.BrandMaxDesignTools?.hasLayers(id))) return Promise.resolve(null);
     const frame = document.querySelector(`[data-blank-output="${id}"]`);
     const visibleDesign = frame?.querySelector('.blank-design-preview');
     const visibleOverlay = frame?.querySelector('.blank-mall-tag');
@@ -95,7 +117,7 @@
           : Promise.all([loadImage(item.mallTag), loadImage(item.cta)]))
         : Promise.resolve([]);
       const logoSource = item.title === 'Floating Icon' ? floatingBlankLogo?.url : '';
-      return Promise.all([waitForVisibleImage(visibleDesign, upload.url), overlays, logoSource ? loadImage(logoSource) : Promise.resolve(null)]).then(([design, [mallTag, cta], logo]) => {
+      return Promise.all([upload ? waitForVisibleImage(visibleDesign, upload.url) : Promise.resolve(null), overlays, logoSource ? loadImage(logoSource) : Promise.resolve(null)]).then(async ([design, [mallTag, cta], logo]) => {
         const canvas = document.createElement('canvas');
         canvas.width = item.canvasWidth;
         canvas.height = item.canvasHeight;
@@ -107,25 +129,30 @@
           context.fillRect(0, 0, canvas.width, canvas.height);
         }
         const box = item.designBox;
-        const baseScale = Math.max(box.width / design.naturalWidth, box.height / design.naturalHeight);
-        const scale = baseScale * (1 + editFor(id).scale / 100);
-        const width = design.naturalWidth * scale;
-        const height = design.naturalHeight * scale;
-        const edit = editFor(id);
-        const x = box.x + (box.width - width) / 2 + edit.x / (frame?.clientWidth || canvas.width) * canvas.width;
-        const y = box.y + (box.height - height) / 2 + edit.y / (frame?.clientHeight || canvas.height) * canvas.height;
-        context.save();
-        // The fixed overlay supplies the visible rounded boundary. The clip
-        // prevents user artwork from crossing into its surrounding chrome.
-        if (item.title === 'Floating Icon') {
-          context.beginPath();
-          context.arc(180, 190, 160, 0, Math.PI * 2);
-        } else {
-          roundedRectPath(context, box.x, box.y, box.width, box.height, 30);
+        if (design) {
+          const crop = cropFor(editFor(id));
+          const sourceWidth = design.naturalWidth * crop.w, sourceHeight = design.naturalHeight * crop.h;
+          const baseScale = Math.max(box.width / sourceWidth, box.height / sourceHeight);
+          const scale = baseScale * (1 + editFor(id).scale / 100);
+          const width = sourceWidth * scale;
+          const height = sourceHeight * scale;
+          const edit = editFor(id);
+          const x = box.x + (box.width - width) / 2 + edit.x / (frame?.clientWidth || canvas.width) * canvas.width;
+          const y = box.y + (box.height - height) / 2 + edit.y / (frame?.clientHeight || canvas.height) * canvas.height;
+          context.save();
+          // The fixed overlay supplies the visible rounded boundary. The clip
+          // prevents user artwork from crossing into its surrounding chrome.
+          if (item.title === 'Floating Icon') {
+            context.beginPath();
+            context.arc(180, 190, 160, 0, Math.PI * 2);
+          } else {
+            roundedRectPath(context, box.x, box.y, box.width, box.height, 30);
+          }
+          context.clip();
+          context.drawImage(design, design.naturalWidth * crop.x, design.naturalHeight * crop.y, sourceWidth, sourceHeight, x, y, width, height);
+          context.restore();
         }
-        context.clip();
-        context.drawImage(design, x, y, width, height);
-        context.restore();
+        await window.BrandMaxDesignTools?.draw(context, id);
         if (item.overlay && mallTag) {
           context.drawImage(mallTag, 0, 0, canvas.width, canvas.height);
         } else if (mallTag && cta) {
@@ -147,21 +174,26 @@
     /* Use the images already rendered inside the selected preview. This keeps
        review and export aligned with what the user sees, including the overlay. */
     const images = includeOverlay
-      ? Promise.all([waitForVisibleImage(visibleDesign, upload.url), loadOriginalOverlayForCanvas(item, visibleOverlay)])
-      : Promise.all([waitForVisibleImage(visibleDesign, upload.url)]);
-    return images.then(([design, overlay]) => {
+      ? Promise.all([upload ? waitForVisibleImage(visibleDesign, upload.url) : Promise.resolve(null), loadOriginalOverlayForCanvas(item, visibleOverlay)])
+      : Promise.all([upload ? waitForVisibleImage(visibleDesign, upload.url) : Promise.resolve(null)]);
+    return images.then(async ([design, overlay]) => {
       const canvas = document.createElement('canvas');
       canvas.width = item.canvasWidth;
       canvas.height = item.canvasHeight;
       const context = canvas.getContext('2d');
-      const baseScale = Math.max(canvas.width / design.naturalWidth, canvas.height / design.naturalHeight);
-      const scale = baseScale * (1 + editFor(id).scale / 100);
-      const width = design.naturalWidth * scale;
-      const height = design.naturalHeight * scale;
-      const edit = editFor(id);
-      const x = (canvas.width - width) / 2 + edit.x / (frame?.clientWidth || canvas.width) * canvas.width;
-      const y = (canvas.height - height) / 2 + edit.y / (frame?.clientHeight || canvas.height) * canvas.height;
-      context.drawImage(design, x, y, width, height);
+      if (design) {
+        const crop = cropFor(editFor(id));
+        const sourceWidth = design.naturalWidth * crop.w, sourceHeight = design.naturalHeight * crop.h;
+        const baseScale = Math.max(canvas.width / sourceWidth, canvas.height / sourceHeight);
+        const scale = baseScale * (1 + editFor(id).scale / 100);
+        const width = sourceWidth * scale;
+        const height = sourceHeight * scale;
+        const edit = editFor(id);
+        const x = (canvas.width - width) / 2 + edit.x / (frame?.clientWidth || canvas.width) * canvas.width;
+        const y = (canvas.height - height) / 2 + edit.y / (frame?.clientHeight || canvas.height) * canvas.height;
+        context.drawImage(design, design.naturalWidth * crop.x, design.naturalHeight * crop.y, sourceWidth, sourceHeight, x, y, width, height);
+      }
+      await window.BrandMaxDesignTools?.draw(context, id);
       if (overlay) context.drawImage(overlay, 0, 0, canvas.width, canvas.height);
       return canvas;
     });
@@ -220,8 +252,8 @@
     if (templateMode.value !== 'blank') return;
     const generation = reviewGeneration;
     const item = outputs[id];
-    if (!item || !blankUploads.has(id)) {
-      showReview('Upload a design for one of the selected outputs to receive visual suggestions.');
+    if (!item || (!blankUploads.has(id) && !window.BrandMaxDesignTools?.hasLayers(id))) {
+      showReview('Upload a design or add an element to receive visual suggestions.');
       return;
     }
     showReview(`Analysing the rendered ${item.title}…`);
@@ -353,41 +385,7 @@
     // Pop Up Banner is explicitly a transparent PNG output. Its fixed canvas
     // is always 580 × 720, and it must never take the generic JPEG fallback.
     if (item.designBox && item.mallTag) {
-      if (png.size <= EXPORT_MAX_BYTES) return { blob: png, extension: 'png' };
-      const designCanvas = await createBlankArtworkCanvas(id, false);
-      const [mallTag, cta] = await Promise.all([loadImage(item.mallTag), loadImage(item.cta)]);
-      let best = { blob: png, extension: 'png' };
-      let bestUnderTarget = null;
-      // PNG itself has no quality setting. Apply only a light compression pass
-      // to the uploaded artwork; the later indexed-PNG step chooses an adaptive
-      // palette instead of the visibly harsh uniform posterisation used before.
-      const qualitySteps = [0.94];
-      for (const quality of qualitySteps) {
-        const designJpeg = await canvasToBlob(designCanvas, 'image/jpeg', quality);
-        const softenedDesign = await imageFromBlob(designJpeg);
-        const composed = document.createElement('canvas');
-        composed.width = item.canvasWidth;
-        composed.height = item.canvasHeight;
-        const context = composed.getContext('2d');
-        const box = item.designBox;
-        context.save();
-        roundedRectPath(context, box.x, box.y, box.width, box.height, 30);
-        context.clip();
-        context.drawImage(softenedDesign, 0, 0, composed.width, composed.height);
-        context.restore();
-        context.drawImage(mallTag, 129, 10, 323, 52);
-        context.drawImage(cta, 90, 644, 399, 66);
-        // Retain detail by selecting the richest indexed PNG below the budget,
-        // instead of accepting the first (often very small) compressed file.
-        for (const ditherStrength of [0, 4, 8, 12, 16]) {
-          const candidate = (await indexedPngBlob(composed, ditherStrength)) || await canvasToBlob(composed, 'image/png');
-          if (candidate.size < best.blob.size) best = { blob: candidate, extension: 'png' };
-          if (candidate.size <= EXPORT_TARGET_BYTES && (!bestUnderTarget || candidate.size > bestUnderTarget.blob.size)) {
-            bestUnderTarget = { blob: candidate, extension: 'png' };
-          }
-        }
-      }
-      return bestUnderTarget || best;
+      return window.BrandMaxPopupExport.encode(fullCanvas, EXPORT_MAX_BYTES);
     }
     if (png.size <= EXPORT_MAX_BYTES) return { blob: png, extension: 'png' };
 
@@ -395,7 +393,7 @@
        design, then redraw the original official tag PNG sharply on top. */
     const designCanvas = await createBlankArtworkCanvas(id, false);
     const frame = document.querySelector(`[data-blank-output="${id}"]`);
-    const officialOverlay = item.designBox
+    const officialOverlay = item.mallTag
       ? await Promise.all([loadImage(item.mallTag), loadImage(item.cta)])
       : await loadOriginalOverlayForCanvas(item, frame?.querySelector('.blank-mall-tag'));
     let best = null;
@@ -410,7 +408,7 @@
       composed.height = item.canvasHeight;
       const context = composed.getContext('2d');
       context.drawImage(softenedDesign, 0, 0, composed.width, composed.height);
-      if (item.designBox) {
+      if (item.mallTag) {
         context.drawImage(officialOverlay[0], 129, 10, 323, 52);
         context.drawImage(officialOverlay[1], 90, 644, 399, 66);
       } else {
@@ -436,17 +434,18 @@
 
   async function downloadBlankOutput(id) {
     const upload = blankUploads.get(id);
-    if (!upload) return;
+    if (!upload && !window.BrandMaxDesignTools?.hasLayers(id)) return;
     try {
       const file = await createUnderLimitBlankFile(id);
-      // Pop Up stays transparent PNG and prioritises the supplied artwork's
-      // colour quality if a browser PNG encoder cannot reach 250KB exactly.
+      // Pop-up PNGs retain transparency and native dimensions, with only the
+      // minimum colour reduction needed to stay strictly below 250 KB.
       const maxBytes = outputs[id].title === 'Banner Card' ? 500 * 1000 : EXPORT_MAX_BYTES;
       const isTransparentPng = Boolean(outputs[id].mallTag) || outputs[id].title === 'Floating Icon';
       // Skinny must remain a full-quality, opaque PNG even when detailed
       // uploaded artwork makes the file larger than the older 700 KB cap.
       const isOpaqueSkinnyPng = id === 'skinny-banner' && file?.extension === 'png';
-      if (!file || (!isTransparentPng && !isOpaqueSkinnyPng && file.blob.size > maxBytes)) {
+      if (!file || (id === 'pop-up-banner' && file.blob.size >= EXPORT_MAX_BYTES)
+        || (!isTransparentPng && !isOpaqueSkinnyPng && file.blob.size > maxBytes)) {
         throw new Error('Cannot meet export limit');
       }
       const link = document.createElement('a');
@@ -478,7 +477,53 @@
     return edit;
   }
 
+  // Editor-only guidance: never paint this layer into a banner or phone export.
+  function createBannerCardSafeArea() {
+    const guide = document.createElement('div');
+    guide.className = 'banner-card-safe-area';
+    guide.setAttribute('aria-label', 'Bottom 70 pixels may be covered by the image carousel dots');
+    guide.innerHTML = '<span>70px safe area · carousel dots</span>';
+    return guide;
+  }
+
+  const standardSafeAreas = new Map();
+  const standardSafeAreaObserver = new ResizeObserver(() => {
+    standardSafeAreas.forEach(({ position }) => position());
+  });
+  function mountStandardSafeAreas() {
+    standardSafeAreas.forEach(({ guide }, canvas) => {
+      if (canvas.isConnected) return;
+      standardSafeAreaObserver.unobserve(canvas);
+      guide.remove();
+      standardSafeAreas.delete(canvas);
+    });
+    document.querySelectorAll('#previewList canvas.asset-canvas[data-output="banner-card"]').forEach(canvas => {
+      if (standardSafeAreas.has(canvas)) return;
+      const shell = canvas.closest('.canvas-shell');
+      if (!shell) return;
+      const guide = createBannerCardSafeArea();
+      guide.classList.add('banner-card-safe-area-standard');
+      const position = () => {
+        // The canvas uses object-fit:contain: account for letterboxing inside
+        // its CSS box, rather than stretching the guide across the checkerboard.
+        const width = canvas.clientWidth, height = canvas.clientHeight;
+        const scale = Math.min(width / 531, height / 792);
+        const artWidth = 531 * scale, artHeight = 792 * scale;
+        Object.assign(guide.style, {
+          left: `${canvas.offsetLeft + (width - artWidth) / 2}px`,
+          top: `${canvas.offsetTop + (height - artHeight) / 2 + 722 * scale}px`,
+          width: `${artWidth}px`, height: `${70 * scale}px`,
+        });
+      };
+      standardSafeAreas.set(canvas, { guide, position });
+      shell.append(guide);
+      standardSafeAreaObserver.observe(canvas);
+      position();
+    });
+  }
+
   function renderBlankPreviews() {
+    blankStack.querySelectorAll('.blank-design-frame').forEach(frame => imageLayoutObserver.unobserve(frame));
     blankStack.innerHTML = '';
     selectedOutputs().forEach((id) => {
       const item = outputs[id];
@@ -509,15 +554,45 @@
       const uploadInfo = `Upload your design<br /><b>${uploadArea.width} × ${uploadArea.height}px</b>`;
       const designPreview = isBounded
         ? `<div class="blank-popup-design-mask"><img class="blank-design-preview" alt="Uploaded ${item.title} preview" ${upload ? `src="${upload.url}"` : 'hidden'} /></div>`
-        : `<img class="blank-design-preview" alt="Uploaded ${item.title} preview" ${upload ? `src="${upload.url}"` : 'hidden'} />`;
-      block.innerHTML = `<div class="preview-heading"><div><h2 class="preview-title">${item.title}</h2><p class="preview-meta">${item.meta}</p></div><div class="preview-actions">${isFloating ? `<label class="zoom-control floating-ratio-control"><span>Logo ratio</span><select class="floating-blank-ratio"><option value="horizontal">Horizontal</option><option value="square">1:1</option></select></label><label class="zoom-control"><span>Logo size</span><input data-control="logo-scale" type="range" min="60" max="300" step="1" value="${floatingBlankLogoScale}" /><span class="floating-logo-scale-value">${floatingBlankLogoScale}%</span></label>` : ''}<label class="zoom-control"><span>Image size</span><input data-control="design-scale" type="range" min="0" max="300" step="1" value="${edit.scale}" /><span class="zoom-value">${edit.scale}%</span></label></div></div><div class="canvas-shell blank-canvas-shell"><div class="blank-design-frame ${upload ? 'has-image' : ''} ${isBounded ? 'blank-popup-frame' : ''}" data-blank-output="${id}" style="aspect-ratio:${item.ratio};--blank-preview-width:${item.width};${boxStyle}"><div class="blank-image-placeholder" ${upload ? 'hidden' : ''}><div class="blank-placeholder-content"><div class="blank-placeholder-copy"><span>YOUR DESIGN</span><small>${uploadInfo}</small></div>${upload ? '' : '<label class="blank-placeholder-upload">Upload Design<input data-upload="design" type="file" accept="image/png,image/jpeg,image/webp" /></label>'}</div></div>${designPreview}${popupOverlays}${floatingLogoMarkup}</div></div><div class="preview-footer">${upload ? '<label class="blank-canvas-upload">Replace design<input data-upload="design" type="file" accept="image/png,image/jpeg,image/webp" /></label>' : '<span></span>'}<button type="button" class="preview-button blank-homepage-preview">Preview</button><button type="button" class="download-button blank-download" ${upload ? '' : 'disabled'}>Download</button></div>`;
-      const input = block.querySelector('input[data-upload="design"]');
+        : `<div class="blank-base-art-clip"><img class="blank-design-preview" alt="Uploaded ${item.title} preview" ${upload ? `src="${upload.url}"` : 'hidden'} /></div>`;
+      block.innerHTML = `<div class="preview-heading"><div><h2 class="preview-title">${item.title}</h2><p class="preview-meta">${item.meta}</p></div><div class="preview-actions">${isFloating ? `<label class="zoom-control floating-ratio-control"><span>Logo ratio</span><select class="floating-blank-ratio"><option value="horizontal">Horizontal</option><option value="square">1:1</option></select></label><label class="zoom-control"><span>Logo size</span><input data-control="logo-scale" type="range" min="60" max="300" step="1" value="${floatingBlankLogoScale}" /><span class="floating-logo-scale-value">${floatingBlankLogoScale}%</span></label>` : ''}<label class="zoom-control"><span>Image size</span><input data-control="design-scale" type="range" min="0" max="300" step="1" value="${edit.scale}" /><span class="zoom-value">${edit.scale}%</span></label></div></div><div class="canvas-shell blank-canvas-shell"><div class="blank-design-frame ${upload ? 'has-image' : ''} ${isBounded ? 'blank-popup-frame' : ''}" data-blank-output="${id}" style="aspect-ratio:${item.ratio};--blank-preview-width:${item.width};${boxStyle}"><div class="blank-image-placeholder" ${upload ? 'hidden' : ''}><div class="blank-placeholder-content"><div class="blank-placeholder-copy"><span>YOUR DESIGN</span><small>${uploadInfo}</small></div>${upload ? '' : '<label class="blank-placeholder-upload">Upload Design<input data-upload="design" type="file" accept="image/png,image/jpeg,image/webp" /></label>'}</div></div>${designPreview}${popupOverlays}${floatingLogoMarkup}</div></div><div class="preview-footer">${upload ? '<label class="blank-canvas-upload">Replace design<input data-upload="design" type="file" accept="image/png,image/jpeg,image/webp" /></label>' : '<span></span>'}<button type="button" class="preview-button blank-homepage-preview">Preview</button><button type="button" class="download-button blank-download" ${upload || window.BrandMaxDesignTools?.hasLayers(id) ? '' : 'disabled'}>Download</button></div>`;
+      if (!upload && window.BrandMaxDesignTools?.hasLayers(id)) {
+        const label = document.createElement('label');
+        label.className = 'blank-canvas-upload';
+        label.innerHTML = 'Upload design<input data-upload="design" type="file" accept="image/png,image/jpeg,image/webp" />';
+        block.querySelector('.preview-footer > span')?.replaceWith(label);
+      }
+      const designInputs = [...block.querySelectorAll('input[data-upload="design"]')];
       const logoInput = block.querySelector('input[data-upload="logo"]');
       const slider = block.querySelector('input[data-control="design-scale"]');
       const logoSlider = block.querySelector('input[data-control="logo-scale"]');
       const value = block.querySelector('.zoom-value');
       const frame = block.querySelector('.blank-design-frame');
       const image = block.querySelector('.blank-design-preview');
+      if (id === 'banner-card') frame.append(createBannerCardSafeArea());
+      if (upload) {
+        const actions = document.createElement('div');
+        actions.className = 'blank-design-upload-actions';
+        const replace = block.querySelector('.blank-canvas-upload');
+        replace.replaceWith(actions);
+        actions.append(replace);
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'blank-remove-design';
+        remove.textContent = 'Remove design';
+        remove.setAttribute('aria-label', `Remove ${item.title} uploaded design`);
+        remove.addEventListener('click', () => {
+          const previous = blankUploads.get(id);
+          blankUploads.delete(id);
+          blankEdits.delete(id);
+          // History stores the original File, not its temporary URL. Undo
+          // reconstructs a fresh URL; custom objects and the logo stay intact.
+          if (previous) URL.revokeObjectURL(previous.url);
+          renderBlankPreviews();
+          document.dispatchEvent(new Event('brandmax:edited'));
+        });
+        actions.append(remove);
+      }
       const ratioSelect = block.querySelector('.floating-blank-ratio');
       if (ratioSelect) {
         ratioSelect.value = floatingBlankLogoRatio;
@@ -527,6 +602,7 @@
             ? (exactMallOverlays['floating-square'] || 'assets/overlays/floating-square-overlay.png')
             : (exactMallOverlays['floating-horizontal'] || 'assets/overlays/floating-horizontal-overlay.png');
           renderBlankPreviews();
+          document.dispatchEvent(new Event('brandmax:edited'));
         });
       }
       if (logoInput) {
@@ -536,6 +612,7 @@
           if (floatingBlankLogo) URL.revokeObjectURL(floatingBlankLogo.url);
           floatingBlankLogo = { file: nextFile, url: URL.createObjectURL(nextFile) };
           renderBlankPreviews();
+          document.dispatchEvent(new Event('brandmax:edited'));
         });
       }
       if (logoSlider) {
@@ -544,14 +621,53 @@
           block.querySelector('.floating-logo-scale-value').textContent = `${floatingBlankLogoScale}%`;
           const logoImage = block.querySelector('.blank-floating-logo img');
           if (logoImage) logoImage.style.transform = `scale(${floatingBlankLogoScale / 100})`;
+          document.dispatchEvent(new Event('brandmax:edited'));
         });
       }
       const apply = () => {
         const next = clampPosition(frame, edit, item);
-        image.style.transform = `translate(${next.x}px, ${next.y}px) scale(${1 + next.scale / 100})`;
+        const crop = cropFor(next), box = item.designBox;
+        const areaWidth = box ? frame.clientWidth * box.width / item.canvasWidth : frame.clientWidth;
+        const areaHeight = box ? frame.clientHeight * box.height / item.canvasHeight : frame.clientHeight;
+        if (image.naturalWidth && image.naturalHeight) {
+          const scale = Math.max(areaWidth / (image.naturalWidth * crop.w), areaHeight / (image.naturalHeight * crop.h)) * (1 + next.scale / 100);
+          const fullWidth = image.naturalWidth * scale, fullHeight = image.naturalHeight * scale;
+          const x = (areaWidth - fullWidth * crop.w) / 2 - fullWidth * crop.x + next.x;
+          const y = (areaHeight - fullHeight * crop.h) / 2 - fullHeight * crop.y + next.y;
+          Object.assign(image.style, { position:'absolute', inset:'auto', left:'0', top:'0', width:`${fullWidth}px`, height:`${fullHeight}px`, objectFit:'fill', transformOrigin:'top left', transform:`translate(${x}px, ${y}px)` });
+        }
         setEdit(id, next);
       };
-      input.addEventListener('change', () => {
+      image.addEventListener('load', apply);
+      imageLayoutCallbacks.set(frame, apply);
+      imageLayoutObserver.observe(frame);
+      const isEditablePoint = event => {
+        const rect = frame.getBoundingClientRect();
+        const x = (event.clientX - rect.left) / rect.width * item.canvasWidth;
+        const y = (event.clientY - rect.top) / rect.height * item.canvasHeight;
+        const inRect = box => x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
+        if (isFloating) {
+          if (Math.hypot(x - 180, y - 190) > 160 || inRect(floatingLogoBox)) return false;
+        } else if (item.designBox) {
+          const box = item.designBox;
+          if (!inRect(box)) return false;
+          const cx = Math.max(box.x + 30, Math.min(box.x + box.width - 30, x));
+          const cy = Math.max(box.y + 30, Math.min(box.y + box.height - 30, y));
+          if (Math.hypot(x - cx, y - cy) > 30) return false;
+          if (isPopup && (inRect({x:129,y:10,width:323,height:52}) || inRect({x:90,y:644,width:399,height:66}))) return false;
+        }
+        return x >= 0 && y >= 0 && x <= item.canvasWidth && y <= item.canvasHeight;
+      };
+      frame.addEventListener('dblclick', event => {
+        if (!upload || event.target.closest('.blank-custom-layer,.blank-floating-logo') || !isEditablePoint(event)) return;
+        event.preventDefault(); event.stopPropagation();
+        window.BrandMaxImageCrop?.open({ src:upload.url, crop:cropFor(edit), onApply:crop => {
+          if (blankUploads.get(id) !== upload) return;
+          setEdit(id, { scale:0, x:0, y:0, crop:cropFor({crop}) });
+          renderBlankPreviews(); document.dispatchEvent(new Event('brandmax:edited'));
+        } });
+      });
+      designInputs.forEach(input => input.addEventListener('change', () => {
         const nextFile = input.files[0];
         if (!nextFile) return;
         const previous = blankUploads.get(id);
@@ -560,20 +676,22 @@
         blankEdits.delete(id);
         reviewedOutputId = id;
         renderBlankPreviews();
-        requestAnimationFrame(() => reviewBlankOutput(id));
-      });
+        document.dispatchEvent(new Event('brandmax:edited'));
+      }));
       block.querySelector('.blank-download').addEventListener('click', () => downloadBlankOutput(id));
       block.querySelector('.blank-homepage-preview').addEventListener('click', () => window.BrandMaxHomepagePreview?.preview(id));
       slider.addEventListener('input', () => {
         edit.scale = Number(slider.value);
         value.textContent = `${edit.scale}%`;
         apply();
+        document.dispatchEvent(new Event('brandmax:edited'));
       });
       let drag = null;
       frame.addEventListener('pointerdown', (event) => {
         // Logo upload is a separate action. Do not turn its click into a
         // design-drag gesture before the browser can open the file picker.
-        if (event.target.closest('.blank-floating-logo')) return;
+        if (event.target.closest('.blank-floating-logo') || !isEditablePoint(event)) return;
+        if (window.BrandMaxDesignTools?.shouldBlockArtworkDrag(event)) return;
         if (!upload) return;
         drag = { x: event.clientX, y: event.clientY, startX: edit.x, startY: edit.y };
         frame.setPointerCapture(event.pointerId);
@@ -581,16 +699,19 @@
       });
       frame.addEventListener('pointermove', (event) => {
         if (!drag) return;
-        edit.x = drag.startX + event.clientX - drag.x;
-        edit.y = drag.startY + event.clientY - drag.y;
+        const viewScale = frame.getBoundingClientRect().width / frame.clientWidth || 1;
+        edit.x = drag.startX + (event.clientX - drag.x) / viewScale;
+        edit.y = drag.startY + (event.clientY - drag.y) / viewScale;
         apply();
       });
-      const stopDrag = () => { drag = null; frame.classList.remove('is-dragging'); };
+      const stopDrag = () => { if (drag && (edit.x !== drag.startX || edit.y !== drag.startY)) document.dispatchEvent(new Event('brandmax:edited')); drag = null; frame.classList.remove('is-dragging'); };
       frame.addEventListener('pointerup', stopDrag);
       frame.addEventListener('pointercancel', stopDrag);
       blankStack.append(block);
       requestAnimationFrame(apply);
     });
+    window.BrandMaxCanvasZoom?.mount();
+    window.BrandMaxDesignTools?.mount();
     window.BrandMaxHomepagePreview?.refresh();
   }
 
@@ -613,14 +734,14 @@
     document.documentElement.classList.toggle('blank-mode', blank);
     blankCard.hidden = !blank;
     reviewGeneration += 1;
-    reviewerHeading.hidden = !blank;
-    reviewerBox.hidden = !blank;
-    reviewerGuidelines.hidden = !blank;
-    reviewButton.disabled = !blank;
+    reviewerHeading.hidden = true;
+    reviewerBox.hidden = true;
+    reviewerGuidelines.hidden = true;
+    reviewButton.disabled = true;
     reviewPreview.replaceChildren();
     reviewPreview.hidden = true;
-    if (blank) showReview('Upload a design, then select Analyse design for tailored suggestions.');
-    else { reviewedOutputId = null; reviewStatus.replaceChildren(); }
+    reviewedOutputId = null;
+    reviewStatus.replaceChildren();
     window.BrandMaxHomepagePreview?.refresh();
   }
 
@@ -628,6 +749,7 @@
     blankUploads.forEach((upload) => URL.revokeObjectURL(upload.url));
     blankUploads.clear();
     blankEdits.clear();
+    window.BrandMaxDesignTools?.reset();
     if (floatingBlankLogo) URL.revokeObjectURL(floatingBlankLogo.url);
     floatingBlankLogo = null;
     floatingBlankLogoRatio = 'horizontal';
@@ -636,45 +758,97 @@
     outputs['floating-icon'].overlay = exactMallOverlays['floating-horizontal'] || 'assets/overlays/floating-horizontal-overlay.png';
   }
 
+  function snapshotBlankState() {
+    return {
+      uploads: [...blankUploads].map(([id, upload]) => [id, upload.file]),
+      edits: [...blankEdits].map(([id, edit]) => [id, { ...edit }]),
+      logoFile: floatingBlankLogo?.file || null,
+      logoRatio: floatingBlankLogoRatio,
+      logoScale: floatingBlankLogoScale,
+      tools: window.BrandMaxDesignTools?.snapshot() || {},
+    };
+  }
+  function blankFingerprint(value) {
+    if (value instanceof Blob) {
+      if (!blobHistoryIds.has(value)) blobHistoryIds.set(value, ++nextBlobHistoryId);
+      return `file:${blobHistoryIds.get(value)}`;
+    }
+    if (Array.isArray(value)) return `[${value.map(blankFingerprint).join(',')}]`;
+    if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key => `${key}:${blankFingerprint(value[key])}`).join(',')}}`;
+    return JSON.stringify(value);
+  }
+  function updateBlankHistoryButtons() {
+    document.dispatchEvent(new Event('brandmax:blank-history-updated'));
+  }
+  function resetBlankHistory() {
+    blankHistory.past = [];
+    blankHistory.future = [];
+    blankHistory.current = snapshotBlankState();
+    updateBlankHistoryButtons();
+  }
+  function recordBlankHistory(event) {
+    if (templateMode.value !== 'blank' || blankHistory.restoring || event?.detail?.source === 'standard' || event?.detail?.source === 'blank-history') return;
+    const next = snapshotBlankState();
+    if (!blankHistory.current) { blankHistory.current = next; return; }
+    if (blankFingerprint(next) === blankFingerprint(blankHistory.current)) return;
+    blankHistory.past.push(blankHistory.current);
+    if (blankHistory.past.length > 80) blankHistory.past.shift();
+    blankHistory.current = next;
+    blankHistory.future = [];
+    updateBlankHistoryButtons();
+  }
+  function applyBlankState(saved = {}) {
+    clearBlankArtwork();
+    for (const [id, file] of saved.uploads || []) {
+      if (outputs[id] && file instanceof Blob) blankUploads.set(id, { file, url: URL.createObjectURL(file) });
+    }
+    for (const [id, edit] of saved.edits || []) {
+      if (outputs[id] && edit && typeof edit === 'object') {
+        blankEdits.set(id, { scale: Number(edit.scale) || 0, x: Number(edit.x) || 0, y: Number(edit.y) || 0, ...(edit.crop ? {crop:cropFor(edit)} : {}) });
+      }
+    }
+    floatingBlankLogoRatio = saved.logoRatio === 'square' ? 'square' : 'horizontal';
+    floatingBlankLogoScale = Number(saved.logoScale) || 100;
+    if (saved.logoFile instanceof Blob) floatingBlankLogo = { file: saved.logoFile, url: URL.createObjectURL(saved.logoFile) };
+    window.BrandMaxDesignTools?.restore(saved.tools || {});
+    outputs['floating-icon'].overlay = floatingBlankLogoRatio === 'square'
+      ? (exactMallOverlays['floating-square'] || 'assets/overlays/floating-square-overlay.png')
+      : (exactMallOverlays['floating-horizontal'] || 'assets/overlays/floating-horizontal-overlay.png');
+    renderBlankPreviews();
+  }
+  function travelBlankHistory(direction) {
+    const source = direction === 'undo' ? blankHistory.past : blankHistory.future;
+    const destination = direction === 'undo' ? blankHistory.future : blankHistory.past;
+    if (!source.length) return;
+    destination.push(blankHistory.current || snapshotBlankState());
+    const saved = source.pop();
+    blankHistory.restoring = true;
+    try { applyBlankState(saved); blankHistory.current = snapshotBlankState(); }
+    finally { blankHistory.restoring = false; }
+    updateBlankHistoryButtons();
+    document.dispatchEvent(new CustomEvent('brandmax:edited', { detail: { source: 'blank-history' } }));
+  }
+
   // Keep Blank artwork in browser-local projects without persisting temporary
   // blob: URLs. IndexedDB can store the original File/Blob objects directly.
   window.BrandMaxBlankState = Object.freeze({
-    snapshot() {
-      return {
-        uploads: [...blankUploads].map(([id, upload]) => [id, upload.file]),
-        edits: [...blankEdits].map(([id, edit]) => [id, { ...edit }]),
-        logoFile: floatingBlankLogo?.file || null,
-        logoRatio: floatingBlankLogoRatio,
-        logoScale: floatingBlankLogoScale,
-      };
-    },
+    renderCanvas(id) { return createBlankArtworkCanvas(id); },
+    snapshot: snapshotBlankState,
     restore(saved = {}) {
-      clearBlankArtwork();
-      for (const [id, file] of saved.uploads || []) {
-        if (outputs[id] && file instanceof Blob) {
-          blankUploads.set(id, { file, url: URL.createObjectURL(file) });
-        }
-      }
-      for (const [id, edit] of saved.edits || []) {
-        if (outputs[id] && edit && typeof edit === 'object') {
-          blankEdits.set(id, { scale: Number(edit.scale) || 0, x: Number(edit.x) || 0, y: Number(edit.y) || 0 });
-        }
-      }
-      floatingBlankLogoRatio = saved.logoRatio === 'square' ? 'square' : 'horizontal';
-      floatingBlankLogoScale = Number(saved.logoScale) || 100;
-      if (saved.logoFile instanceof Blob) {
-        floatingBlankLogo = { file: saved.logoFile, url: URL.createObjectURL(saved.logoFile) };
-      }
-      outputs['floating-icon'].overlay = floatingBlankLogoRatio === 'square'
-        ? (exactMallOverlays['floating-square'] || 'assets/overlays/floating-square-overlay.png')
-        : (exactMallOverlays['floating-horizontal'] || 'assets/overlays/floating-horizontal-overlay.png');
-      renderBlankPreviews();
+      applyBlankState(saved);
+      resetBlankHistory();
     },
     reset() {
       clearBlankArtwork();
       renderBlankPreviews();
+      resetBlankHistory();
     },
+    canUndo() { return blankHistory.past.length > 0; },
+    canRedo() { return blankHistory.future.length > 0; },
+    undo() { travelBlankHistory('undo'); },
+    redo() { travelBlankHistory('redo'); },
   });
+  document.addEventListener('brandmax:edited', recordBlankHistory);
 
   templateMode.addEventListener('change', () => {
     if (templateMode.value !== 'blank') {
@@ -685,6 +859,7 @@
       template.dispatchEvent(new Event('change', { bubbles: true }));
     }
     syncTemplate();
+    updateBlankHistoryButtons();
   });
   template.addEventListener('change', () => {
     if (templateMode.value !== 'blank' && ['Design 1', 'Design 2', 'Design 3'].includes(template.value)) {
@@ -725,13 +900,15 @@
       }
       return originalDownload.click();
     }
-    if (!selectedOutputs().some((id) => blankUploads.has(id))) { reviewStatus.textContent = 'Upload at least one finished design before downloading.'; return; }
-    selectedOutputs().filter((id) => blankUploads.has(id)).forEach((id) => downloadBlankOutput(id));
-  });
-  reviewButton.addEventListener('click', () => {
-    if (templateMode.value !== 'blank') return;
-    reviewBlankOutput(reviewedOutputId || selectedOutputs().find((id) => blankUploads.has(id)));
+    if (!selectedOutputs().some((id) => blankUploads.has(id) || window.BrandMaxDesignTools?.hasLayers(id))) { showReview('Add artwork or a design element before downloading.'); return; }
+    selectedOutputs().filter((id) => blankUploads.has(id) || window.BrandMaxDesignTools?.hasLayers(id)).forEach((id) => downloadBlankOutput(id));
   });
   syncOutputs();
   syncTemplate();
+  resetBlankHistory();
+  const standardPreviewList = document.querySelector('#previewList');
+  if (standardPreviewList) {
+    new MutationObserver(mountStandardSafeAreas).observe(standardPreviewList, { childList: true, subtree: true });
+    mountStandardSafeAreas();
+  }
 })();

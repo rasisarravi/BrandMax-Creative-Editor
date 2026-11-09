@@ -1023,9 +1023,14 @@ function commitHistoryEnd(context) {
   if (history.past.length > HISTORY_LIMIT) history.past.shift();
   history.future = [];
   updateUndoRedoButtons();
+  document.dispatchEvent(new CustomEvent('brandmax:edited', { detail: { source: 'standard' } }));
 }
 
 function undo() {
+  if (document.querySelector('#workflowCanvas')?.value === 'blank') {
+    window.BrandMaxBlankState?.undo();
+    return;
+  }
   const context = editingContext();
   const history = getHistory(context);
   history.pending = null;
@@ -1037,9 +1042,14 @@ function undo() {
   restoreContext(context, previous);
   restoringHistory = false;
   afterHistoryRestore();
+  document.dispatchEvent(new CustomEvent('brandmax:edited', { detail: { source: 'standard' } }));
 }
 
 function redo() {
+  if (document.querySelector('#workflowCanvas')?.value === 'blank') {
+    window.BrandMaxBlankState?.redo();
+    return;
+  }
   const context = editingContext();
   const history = getHistory(context);
   history.pending = null;
@@ -1051,6 +1061,7 @@ function redo() {
   restoreContext(context, next);
   restoringHistory = false;
   afterHistoryRestore();
+  document.dispatchEvent(new CustomEvent('brandmax:edited', { detail: { source: 'standard' } }));
 }
 
 function afterHistoryRestore() {
@@ -1068,6 +1079,11 @@ function afterHistoryRestore() {
 }
 
 function updateUndoRedoButtons() {
+  if (document.querySelector('#workflowCanvas')?.value === 'blank') {
+    if (els.undoButton) els.undoButton.disabled = !window.BrandMaxBlankState?.canUndo();
+    if (els.redoButton) els.redoButton.disabled = !window.BrandMaxBlankState?.canRedo();
+    return;
+  }
   const history = getHistory(editingContext());
   if (els.undoButton) els.undoButton.disabled = history.past.length === 0;
   if (els.redoButton) els.redoButton.disabled = history.future.length === 0;
@@ -3397,7 +3413,8 @@ function getDesignTemplateLayout(format, context) {
     return {
       frame,
       kv: box(0, 0, 531, 370),
-      product: box(0, 350, 531, 442),
+      // Keep the product scene full-bleed behind the rounded message panel.
+      product: frame,
       logo: box(115, 92, 301, 100, 18),
       ksp: textBox(55, 226, 421, 124, 43, 22),
       productAlign: [0.5, 0.5],
@@ -3665,14 +3682,14 @@ function setSkuZoom(outputId, zoom, context = state) {
 }
 
 function getLogoZoom(outputId, context = state) {
+  if (outputId === "floating-icon") return context.logoZooms?.[outputId] ?? LOGO_ZOOM_DEFAULT;
   return context.logoZooms?.shared ?? context.logoZooms?.[outputId] ?? LOGO_ZOOM_DEFAULT;
 }
 
 function setLogoZoom(outputId, zoom, context = state) {
-  // Keep legacy per-format values readable until the next edit, then one
-  // shared zoom intentionally applies to every output format.
   if (!context.logoZooms) context.logoZooms = {};
-  context.logoZooms.shared = clamp(zoom, LOGO_ZOOM_MIN, LOGO_ZOOM_MAX);
+  if (outputId === "floating-icon") context.logoZooms[outputId] = clamp(zoom, LOGO_ZOOM_MIN, LOGO_ZOOM_MAX);
+  else context.logoZooms.shared = clamp(zoom, LOGO_ZOOM_MIN, LOGO_ZOOM_MAX);
 }
 
 // Returns the manually-set KSP font size for this output, or null when it
@@ -6196,7 +6213,7 @@ function syncShopeeLiveFsVisibility(context) {
   if (els.skuBackgroundRow) els.skuBackgroundRow.hidden = isFs;
   if (els.skuBgColorRow) els.skuBgColorRow.hidden = isFs;
   if (els.shopeeLiveFsPanel) els.shopeeLiveFsPanel.hidden = !isFs;
-  if (els.skuImageFieldLabel) els.skuImageFieldLabel.textContent = isFs ? "SKU 1 Image" : "SKU Image";
+  if (els.skuImageFieldLabel) els.skuImageFieldLabel.textContent = isFs ? "SKU 1 image upload" : "Image upload";
 }
 
 // Every Paying Seller template's background is a fixed campaign image, so
@@ -6303,6 +6320,72 @@ async function encodeCanvas(canvas, type = EXPORT_TYPE, quality = undefined) {
   const blob = await canvasToBlob(canvas, type, quality);
   return isRequestedBlobType(blob, type) ? blob : null;
 }
+
+// PNG has no JPEG-style quality setting. For pop-ups keep the original size,
+// transparency, sharp edges and fixed artwork, and reduce colour precision only
+// as much as the upload limit requires. This avoids the former JPEG-softening +
+// 256-colour palette pass, which discarded detail even when more would fit.
+async function createPopupPngUnderLimit(canvas, maxBytes = EXPORT_MAX_BYTES) {
+  const original = await canvasToBlob(canvas, "image/png");
+  if (original.size < maxBytes) return { blob: original, extension: "png", colourStep: 1 };
+  const width = canvas.width;
+  const height = canvas.height;
+  const source = canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, width, height);
+  const counts = new Map();
+  for (let offset = 0; offset < source.data.length; offset += 4) {
+    if (!source.data[offset + 3]) continue;
+    const colour = (source.data[offset] << 16) | (source.data[offset + 1] << 8) | source.data[offset + 2];
+    counts.set(colour, (counts.get(colour) || 0) + 1);
+  }
+  // Preserve flat brand colours exactly, as well as the official tag and CTA.
+  const flatColours = new Set([...counts].filter(([, count]) => count >= 64).map(([colour]) => colour));
+  const working = document.createElement("canvas");
+  working.width = width;
+  working.height = height;
+  const context = working.getContext("2d");
+  const pixels = context.createImageData(width, height);
+  const cache = new Map();
+  const candidateAt = async (step) => {
+    if (cache.has(step)) return cache.get(step);
+    pixels.data.set(source.data);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const offset = (y * width + x) * 4;
+        if (!source.data[offset + 3]) continue;
+        const nx = x * 580 / width;
+        const ny = y * 720 / height;
+        if ((nx >= 129 && nx < 452 && ny >= 10 && ny < 62)
+          || (nx >= 90 && nx < 489 && ny >= 644 && ny < 710)) continue;
+        const colour = (source.data[offset] << 16) | (source.data[offset + 1] << 8) | source.data[offset + 2];
+        if (flatColours.has(colour)) continue;
+        for (let channel = 0; channel < 3; channel += 1) {
+          pixels.data[offset + channel] = Math.min(255, Math.round(source.data[offset + channel] / step) * step);
+        }
+      }
+    }
+    context.putImageData(pixels, 0, 0);
+    const file = { blob: await canvasToBlob(working, "image/png"), extension: "png", colourStep: step };
+    cache.set(step, file);
+    return file;
+  };
+  let previousStep = 1;
+  for (const step of [2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 255]) {
+    const candidate = await candidateAt(step);
+    if (candidate.blob.size < maxBytes) {
+      // Search every intermediate precision level, not the smallest file. A
+      // lower colour step means less pixel error; file size alone is not quality.
+      for (let finer = previousStep + 1; finer < step; finer += 1) {
+        const refined = await candidateAt(finer);
+        if (refined.blob.size < maxBytes) return refined;
+      }
+      return candidate;
+    }
+    previousStep = step;
+  }
+  throw new Error("This pop-up cannot fit below 250 KB without changing its transparency. Try a simpler image.");
+}
+
+window.BrandMaxPopupExport = Object.freeze({ encode: createPopupPngUnderLimit });
 
 function createOpaqueCanvas(canvas) {
   const opaqueCanvas = document.createElement("canvas");
@@ -6534,6 +6617,10 @@ async function createExportFile(outputId, context = state) {
     exportLocalAssets: window.BrandMaxExportLocalAssets || {},
   };
   const canvas = await renderExportCanvas(outputId, exportContext);
+  if (outputId === "pop-up-banner") {
+    const file = await createPopupPngUnderLimit(canvas);
+    return { ...file, name: outputFileName(outputId), label: "PNG", sizeLimited: true };
+  }
   const pngBlob = await encodeCanvas(canvas, EXPORT_TYPE);
   const sizeLimited = SIZE_LIMITED_OUTPUTS.has(outputId);
 
@@ -8149,6 +8236,7 @@ els.downloadAllButton.addEventListener("click", downloadAll);
 
 els.undoButton?.addEventListener("click", undo);
 els.redoButton?.addEventListener("click", redo);
+document.addEventListener('brandmax:blank-history-updated', updateUndoRedoButtons);
 
 document.addEventListener("keydown", (event) => {
   // Let native undo run inside the Touch Up modal or a plain text field —
@@ -8156,7 +8244,7 @@ document.addEventListener("keydown", (event) => {
   if (editSkuState) return;
   const tag = document.activeElement?.tagName;
   const inputType = document.activeElement?.type;
-  if (tag === "TEXTAREA" || (tag === "INPUT" && ["search", "text", "url"].includes(inputType))) return;
+  if (document.activeElement?.isContentEditable || tag === "TEXTAREA" || (tag === "INPUT" && ["search", "text", "url"].includes(inputType))) return;
 
   const isUndo = (event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "z";
   const isRedo =
